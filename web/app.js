@@ -1269,6 +1269,8 @@ function openDetailModal(html) {
   document.body.classList.add("has-modal");
 }
 
+bindDealCalculator(detailModalBody);
+
 detailModalBody.addEventListener("click", (event) => {
   const button = event.target.closest(".modal-thumb-btn");
   if (!button) return;
@@ -1320,7 +1322,9 @@ function listingModalContent(props) {
   const mediaTopBar = listingMediaTopBarHtml(props, detail);
   const media = listingMediaHtml(images, props.u, mediaTopBar);
   const location = [props.n, props.d].filter(Boolean).join(", ");
-  const factsHtml = listingSpecsHtml(detail, props, { showEmpty: true });
+  const feature = state.listingById.get(props.id);
+  const coords = feature?.geometry?.coordinates;
+  const factsHtml = `${investorFieldsHtml(props)}${dealCalculatorHtml(props, coords, state.listings)}${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}`;
   const desc = detail.desc ? listingDescriptionHtml(detail.desc) : "";
   const area = state.areaById?.get(props.i);
   const areaProps = area?.properties;
@@ -1340,9 +1344,9 @@ function listingModalContent(props) {
     </header>
     ${partialNote}
     ${media}
-    ${desc}
     ${factsHtml}
     ${fitBlock}
+    ${desc}
   </article>`;
 }
 
@@ -1412,7 +1416,8 @@ function listingCard(props, { wrap = true } = {}) {
   const detail = props.x || {};
   const area = state.areaById?.get(props.i);
   const areaProps = area?.properties;
-  const specsHtml = listingSpecsHtml(detail, props, { showEmpty: true });
+  const feature = state.listingById.get(props.id);
+  const specsHtml = `${dealSummaryHtml(props, feature?.geometry?.coordinates, state.listings)}${investorFieldsHtml(props)}`;
   const fitHtml = areaProps
     ? `<p class="kicker">Area fit</p>${scoreBarHtml(areaProps.score, "Area fit", true)}${partsHtml(areaProps.parts)}`
     : `<p class="kicker">Area fit</p><p class="unit-note">No neighborhood score for this pin yet.</p>`;

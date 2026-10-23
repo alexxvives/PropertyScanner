@@ -1755,3 +1755,18 @@ body.has-modal {
     max-width: 100%;
   }
 }
+
+/* Deal calculator + investor fields */
+.deal-calc .deal-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.deal-in { display: flex; flex-direction: column; gap: 2px; font-size: 12px; opacity: 0.95; }
+.deal-in__box { display: flex; align-items: center; gap: 4px; }
+.deal-in input { width: 100%; padding: 4px 6px; border: 1px solid rgba(127, 127, 127, 0.4); border-radius: 6px; font: inherit; background: transparent; color: inherit; }
+.deal-in em { font-style: normal; font-size: 11px; opacity: 0.7; white-space: nowrap; }
+.deal-outputs { display: grid; grid-template-columns: repeat(auto-fill, minmax(130px, 1fr)); gap: 6px 12px; margin-top: 10px; }
+.deal-out dt { font-size: 11px; opacity: 0.7; }
+.deal-out dd { margin: 0; font-weight: 600; }
+.deal-note { font-size: 12px; opacity: 0.8; margin: 8px 0 0; }
+.deal-note--warn, .deal-flag { color: #b45309; }
+.deal-summary { font-size: 12px; font-weight: 600; margin: 4px 0; }
+.raw-details { margin-top: 12px; }
+.raw-details > summary { cursor: pointer; font-weight: 600; }

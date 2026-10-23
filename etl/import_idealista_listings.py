@@ -4,6 +4,11 @@
 
 Reads data/raw/mad_idealista_premises_sale.json (no API calls). Re-run after new scrapes.
 
+Usage:
+  python etl/import_idealista_listings.py             # full rebuild from data/raw exports
+  python etl/import_idealista_listings.py --recurate  # refresh only the curated investor
+                                                      # block (properties.inv) in place
+
 """
 
 
@@ -14,6 +19,9 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import sys
+from datetime import date
 
 from pathlib import Path
 
@@ -568,6 +576,175 @@ def listing_detail(item: dict) -> dict:
 
 
 
+# ---------------------------------------------------------------------------
+# Investor field set (keep/drop mapping).
+#
+# Listing cards show ONLY the curated "inv" block below. Everything else from
+# Apify stays in properties.x (raw) and is shown behind a "Raw Idealista data"
+# toggle. Future scrapes go through curate_listing(), so the mapping lives here.
+#
+#   KEEP (-> properties.inv)        SOURCE
+#   price                           item.price / props.p
+#   size_m2                         item.size / props.sz
+#   price_m2                        item.priceByArea / props.pm2 (or price/size)
+#   location                        neighborhood, district, street (ubication.title)
+#   floor                           item.floor (bj=ground, st=basement, en=mezzanine...)
+#   storefront                      ubicationInfo (street/mall), shop windows, corner
+#   condition                       item.status (good/renew/newdevelopment)
+#   current_use                     traspaso flag, "Commercial activity" line,
+#                                   leased/tenant keywords in the description
+#   link                            item.url
+#   photos                          multimedia.images (max 16) / thumbnail
+#   days_on_market                  first time a scrape saw the propertyCode
+#                                   (etl/listing_first_seen.json); Idealista does
+#                                   not expose the publication date
+#   price_drop                      priceDropPercentage / priceDropValue
+#   community_costs_month           moreCharacteristics.communityCosts
+#   energy_class                    moreCharacteristics.energyCertificationType
+#   agency, phone                   contactInfo
+#
+#   DROP from the card (still in raw x): highlight/marketing flags (topPlus,
+#   visualHighlight...), allows* toggles, tracking ids, locationId, imgTags,
+#   agencyLogo, contactMethod, has360/3D/video/staging, savedAd/favourite,
+#   multilingual comments, admin-area ids, lat/lon duplicates.
+# ---------------------------------------------------------------------------
+
+FIRST_SEEN = ROOT / "etl" / "listing_first_seen.json"
+
+FLOOR_LABELS = {
+    "bj": "Ground floor", "st": "Basement", "ss": "Semi-basement",
+    "en": "Mezzanine", "0": "Ground floor",
+}
+CONDITION_LABELS = {
+    "good": "Good condition", "renew": "Needs renovation",
+    "newdevelopment": "New build", "new": "New build",
+}
+LEASED_RE = re.compile(
+    r"\b(alquilad[oa]|arrendad[oa]|con inquilino|inquilino actual|contrato de alquiler en vigor|"
+    r"rentabilidad|inversi[oó]n con renta|leased|sitting tenant|currently rented)\b",
+    re.IGNORECASE,
+)
+VACANT_RE = re.compile(r"\b(vac[ií]o|libre de inquilinos|diáfano|se entregar[aá] (completamente )?vac[ií]o|empty)\b", re.IGNORECASE)
+
+
+def _num(value: object) -> float | None:
+    try:
+        n = float(str(value).replace(",", "."))
+    except (TypeError, ValueError):
+        return None
+    return n if n == n else None
+
+
+def current_use(detail: dict) -> str:
+    raw = detail.get("idealista") or {}
+    desc = str(detail.get("desc") or "")
+    bits: list[str] = []
+    if detail.get("transfer") or raw.get("detailedType.transfer") == "Yes":
+        bits.append("Business transfer (traspaso)")
+    for line in detail.get("basics") or []:
+        if str(line).lower().startswith("commercial activity:"):
+            bits.append(str(line).split(":", 1)[1].strip())
+    if LEASED_RE.search(desc):
+        bits.append("Possibly leased / sold with tenant (check description)")
+    elif VACANT_RE.search(desc):
+        bits.append("Vacant (per description)")
+    return " · ".join(dict.fromkeys(bits))
+
+
+def storefront(detail: dict) -> str:
+    raw = detail.get("idealista") or {}
+    bits: list[str] = []
+    ubic_labels = {
+        "onTheStreet": "Street level", "shoppingCenter": "In shopping centre",
+        "onTopFloor": "Upper floor", "mezzanine": "Mezzanine", "belowGround": "Below ground",
+    }
+    if detail.get("ubic"):
+        bits.append(ubic_labels.get(str(detail.get("ubicKey") or ""), str(detail["ubic"])))
+    windows = raw.get("moreCharacteristics.Shop windows")
+    if windows and windows not in ("—", "0"):
+        bits.append(f"{windows} shop window{'s' if windows != '1' else ''}")
+    else:
+        for line in detail.get("basics") or []:
+            if "show window" in str(line).lower():
+                bits.append(str(line))
+                break
+    corner = raw.get("moreCharacteristics.Corner unit")
+    if corner == "Yes" or (corner is None and any(
+        str(line).strip().lower() == "on the corner" for line in detail.get("basics") or []
+    )):
+        bits.append("Corner")
+    return " · ".join(dict.fromkeys(bits))
+
+
+def load_first_seen() -> dict[str, str]:
+    if FIRST_SEEN.exists():
+        return json.loads(FIRST_SEEN.read_text(encoding="utf-8"))
+    return {}
+
+
+def curate_listing(props: dict, detail: dict, first_seen: dict[str, str], today: str) -> dict:
+    """Return the curated investor field set for one for-sale listing."""
+    raw = detail.get("idealista") or {}
+    code = str(props.get("id") or "")
+    if code and code not in first_seen:
+        first_seen[code] = today
+    seen = first_seen.get(code, today)
+    days = (date.fromisoformat(today) - date.fromisoformat(seen)).days
+    price = int(props.get("p") or 0)
+    size = int(props.get("sz") or 0)
+    pm2 = int(props.get("pm2") or 0) or (round(price / size) if price and size else 0)
+    floor_raw = str(detail.get("floor") or "")
+    street = raw.get("ubication.title") or ""
+    inv = {
+        "price": price,
+        "size_m2": size,
+        "price_m2": pm2,
+        "location": ", ".join(x for x in (street, props.get("n"), props.get("d"), props.get("m")) if x and x != "—"),
+        "floor": FLOOR_LABELS.get(floor_raw, f"Floor {floor_raw}" if floor_raw else ""),
+        "storefront": storefront(detail),
+        "condition": CONDITION_LABELS.get(str(detail.get("status") or ""), str(detail.get("status") or "")),
+        "current_use": current_use(detail),
+        "link": props.get("u") or "",
+        "photos": (detail.get("imgs") or ([detail["thumb"]] if detail.get("thumb") else []))[:16],
+        "first_seen": seen,
+        "days_on_market": days,
+        "price_drop": (
+            f"{detail['priceDropPct']}%" + (f" (−{detail['priceDropVal']} €)" if detail.get("priceDropVal") else "")
+            if detail.get("priceDropPct") is not None else ""
+        ),
+        "community_costs_month": _num(raw.get("moreCharacteristics.Community costs (€/month)")),
+        "energy_class": (raw.get("moreCharacteristics.Energy certificate class") or "").upper().replace("—", ""),
+        "agency": detail.get("agency") or "",
+        "phone": detail.get("phone") or "",
+    }
+    return {k: v for k, v in inv.items() if v not in ("", None, [])}
+
+
+def save_first_seen(first_seen: dict[str, str]) -> None:
+    FIRST_SEEN.write_text(json.dumps(dict(sorted(first_seen.items())), indent=1) + "\n", encoding="utf-8")
+
+
+def recurate_existing() -> None:
+    """Rebuild the curated block from the committed listings.geojson (no raw export needed)."""
+    collection = json.loads(OUT.read_text(encoding="utf-8"))
+    first_seen = load_first_seen()
+    today = date.today().isoformat()
+    for feature in collection["features"]:
+        props = feature["properties"]
+        props["inv"] = curate_listing(props, props.get("x") or {}, first_seen, today)
+    collection["meta"]["investorFields"] = INVESTOR_FIELDS
+    OUT.write_text(json.dumps(collection, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    save_first_seen(first_seen)
+    print(f"re-curated {len(collection['features'])} listings in {OUT}")
+
+
+INVESTOR_FIELDS = [
+    "price", "size_m2", "price_m2", "location", "floor", "storefront", "condition",
+    "current_use", "link", "photos", "first_seen", "days_on_market", "price_drop",
+    "community_costs_month", "energy_class", "agency", "phone",
+]
+
+
 def main() -> None:
     items = load_merged_items()
     if not items:
@@ -578,6 +755,10 @@ def main() -> None:
     index = AreaIndex(areas["features"], "mad-")
 
     features: list[dict] = []
+
+    first_seen = load_first_seen()
+
+    today = date.today().isoformat()
 
     unmatched = 0
 
@@ -645,6 +826,11 @@ def main() -> None:
 
         )
 
+    for feature in features:
+        props = feature["properties"]
+        props["inv"] = curate_listing(props, props["x"], first_seen, today)
+    save_first_seen(first_seen)
+
     collection = {
 
         "type": "FeatureCollection",
@@ -662,6 +848,8 @@ def main() -> None:
             "count": len(features),
 
             "unmatchedAreas": unmatched,
+
+            "investorFields": INVESTOR_FIELDS,
 
             "detailFields": sorted(
 
@@ -712,7 +900,9 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-
-    main()
+    if "--recurate" in sys.argv:
+        recurate_existing()
+    else:
+        main()
 
 

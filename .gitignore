@@ -1,0 +1,9 @@
+data/raw/
+config/secrets.env
+.dev.vars
+
+__pycache__/
+*.pyc
+.venv/
+node_modules/
+.wrangler/

@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Property Scanner — Spain</title>
+    <link rel="stylesheet" href="vendor/maplibre-gl.css" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body class="is-loading">
+    <div id="map"></div>
+    <div class="map-toolbar-anchor" aria-label="Map options">
+      <div class="map-toolbar glass map-toolbar--filters">
+        <div class="map-toolbar__group map-toolbar__group--heat" id="map-heatmap-toolbar" role="group" aria-label="Color the map by"></div>
+        <div class="map-legend" id="map-legend" aria-hidden="true"></div>
+      </div>
+      <div class="map-toolbar glass map-toolbar--styles">
+        <div class="map-toolbar__group map-toolbar__group--stack" id="map-style-toolbar" role="group" aria-label="Map style"></div>
+      </div>
+    </div>
+    <aside class="hover-card glass" id="hover-card" hidden></aside>
+
+    <aside class="search-card glass">
+      <p class="eyebrow">Property Scanner</p>
+      <h1>Where to open</h1>
+
+      <div class="picker" data-picker="business">
+        <span class="field-label" id="business-label">Business to expand</span>
+        <button type="button" class="picker-button" aria-labelledby="business-label business-value" aria-haspopup="listbox" aria-expanded="false" aria-controls="business-menu">
+          <span class="picker-value" id="business-value">Bakery</span>
+          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="picker-menu" id="business-menu" role="listbox" hidden>
+          <button type="button" role="option" data-value="bakery" aria-selected="true">Bakery</button>
+          <button type="button" role="option" data-value="cafe" aria-selected="false">Café</button>
+          <button type="button" role="option" data-value="food" aria-selected="false">Restaurant</button>
+          <button type="button" role="option" data-value="grocery" aria-selected="false">Grocery</button>
+          <button type="button" role="option" data-value="pharmacy" aria-selected="false">Pharmacy</button>
+          <button type="button" role="option" data-value="beauty" aria-selected="false">Hair salon</button>
+          <button type="button" role="option" data-value="fashion" aria-selected="false">Clothing</button>
+          <button type="button" role="option" data-value="health" aria-selected="false">Clinic</button>
+          <button type="button" role="option" data-value="gym" aria-selected="false">Gym</button>
+        </div>
+      </div>
+
+      <div class="picker" data-picker="city">
+        <span class="field-label" id="city-label">City</span>
+        <button type="button" class="picker-button" aria-labelledby="city-label city-value" aria-haspopup="listbox" aria-expanded="false" aria-controls="city-menu">
+          <span class="picker-value" id="city-value">Spain</span>
+          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="picker-menu" id="city-menu" role="listbox" hidden>
+          <button type="button" role="option" data-value="all" aria-selected="true">Spain</button>
+          <button type="button" role="option" data-value="Madrid" aria-selected="false">Madrid</button>
+          <button type="button" role="option" data-value="Barcelona" aria-selected="false">Barcelona</button>
+        </div>
+      </div>
+
+      <section class="sidebar-rank area-rank" aria-labelledby="area-ranking-title">
+        <h2 class="ranking-heading" id="area-ranking-title">Neighborhood ranking · bakery</h2>
+        <ol id="area-ranking" class="ranking" aria-busy="true"></ol>
+      </section>
+    </aside>
+
+    <aside class="ranking-panel glass">
+      <section class="sidebar-rank listing-rank" aria-labelledby="listing-ranking-title">
+        <h2 class="ranking-heading" id="listing-ranking-title">Property ranking · bakery</h2>
+        <ol id="listing-ranking" class="ranking" aria-busy="true"></ol>
+      </section>
+    </aside>
+
+    <div class="detail-modal" id="detail-modal" hidden>
+      <button type="button" class="detail-modal__backdrop" id="detail-modal-backdrop" aria-label="Close"></button>
+      <div class="detail-modal__dialog" role="dialog" aria-modal="true" aria-labelledby="detail-modal-title">
+        <button type="button" class="detail-modal__close" id="detail-modal-close" aria-label="Close">×</button>
+        <div id="detail-modal-body"></div>
+      </div>
+    </div>
+
+    <script src="vendor/maplibre-gl.js"></script>
+    <script src="icons.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

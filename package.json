@@ -1,0 +1,8 @@
+{
+  "name": "property-scanner",
+  "private": true,
+  "scripts": {
+    "dev": "python server.py",
+    "dev:wrangler": "wrangler dev"
+  }
+}

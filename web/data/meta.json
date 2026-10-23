@@ -1,0 +1,91 @@
+{
+  "covered": [
+    {
+      "id": "madrid",
+      "name": "Madrid",
+      "vintage": "16/10/2026",
+      "places": 121661,
+      "areas": 131,
+      "note": "Street-door premises. Closed means the census status is closed, not that the unit is listed for rent."
+    },
+    {
+      "id": "barcelona",
+      "name": "Barcelona",
+      "vintage": "2024",
+      "places": 64737,
+      "areas": 73,
+      "note": "Ground-floor premises. Empty units are marked for rent, for sale, or both."
+    }
+  ],
+  "places": 186398,
+  "areas": 204,
+  "groups": {
+    "food": 18080,
+    "cafe": 6513,
+    "vacant": 39030,
+    "bakery": 4060,
+    "other": 88115,
+    "fashion": 5542,
+    "health": 5284,
+    "beauty": 11295,
+    "grocery": 4199,
+    "pharmacy": 2986,
+    "gym": 1294
+  },
+  "byCity": {
+    "Madrid": 121661,
+    "Barcelona": 64737
+  },
+  "unmatched": {
+    "madrid": [],
+    "barcelona": []
+  },
+  "skipped": {
+    "madrid": 2936,
+    "barcelona": 0
+  },
+  "idealistaListings": {
+    "madrid": 51,
+    "operation": "sale",
+    "detailFields": [
+      "ac",
+      "agency",
+      "agencyLogo",
+      "basics",
+      "bath",
+      "contactMethod",
+      "contactName",
+      "currency",
+      "desc",
+      "dropDate",
+      "floor",
+      "has360",
+      "hasPlan",
+      "hasVideo",
+      "highlight",
+      "idealista",
+      "imgTags",
+      "imgs",
+      "labels",
+      "locId",
+      "modified",
+      "phone",
+      "photos",
+      "prefHighlight",
+      "priceDropPct",
+      "priceDropVal",
+      "propCode",
+      "propertyType",
+      "ref",
+      "showAddr",
+      "stats",
+      "status",
+      "thumb",
+      "typology",
+      "ubic",
+      "ubicKey",
+      "userType"
+    ],
+    "note": "Purple pins on the map. Sample from Apify; expand with etl/import_idealista_listings.py after each scrape."
+  }
+}

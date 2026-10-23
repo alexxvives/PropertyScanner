@@ -1,8 +1,8 @@
 /**
  * Wrangler worker: static web assets + /api/walk and /api/nearby (keys in .dev.vars).
  *
- * Private by default:
- *   - Every request (pages, data, API) needs a session cookie obtained at /login with
+ * Public by default. Login is opt-in: set the REQUIRE_LOGIN var to "true" and then
+ *   - every request (pages, data, API) needs a session cookie obtained at /login with
  *     the shared password in the APP_PASSWORD secret. Cookie is HMAC-signed with
  *     SESSION_SECRET. If APP_PASSWORD is not set the app refuses to serve
  *     (set AUTH_DISABLED=1 in .dev.vars only for local `wrangler dev`).
@@ -258,7 +258,8 @@ async function handleNearby(request, env, ctx) {
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    const authOff = env.AUTH_DISABLED === "1";
+    // Public by default; login is opt-in via the REQUIRE_LOGIN var ("true").
+    const authOff = env.REQUIRE_LOGIN !== "true" || env.AUTH_DISABLED === "1";
     if (!authOff) {
       if (!env.APP_PASSWORD) {
         return new Response("Property Scanner is private. Set the APP_PASSWORD secret (wrangler secret put APP_PASSWORD).", {

@@ -118,26 +118,31 @@ function dealSummaryHtml(props, coords, listings) {
   return `<p class="deal-summary">Est. gross ${dealFmtPct(m.grossYield)} · net ${dealFmtPct(m.netYield)} · payback ${dealFmtYears(m.payback)}${i.rentIsAssumption ? ` <span class="deal-flag">rent assumed ${i.rentM2} €/m²</span>` : ""}</p>`;
 }
 
-/** Editable calculator for the listing modal. */
+/** Editable calculator for the listing modal (visual). */
 function dealCalculatorHtml(props, coords, listings) {
   if (props.op === "rent") return "";
   const i = dealInputs(props, coords, listings);
   const field = (name, label, value, step, suffix) =>
     `<label class="deal-in"><span>${label}</span><span class="deal-in__box"><input type="number" inputmode="decimal" step="${step}" data-deal="${name}" value="${value}" /><em>${suffix}</em></span></label>`;
-  return `<section class="deal-calc listing-spec-section" data-deal-region="${i.region}">
-    <h3 class="listing-spec-section__title"><span>Deal calculator</span></h3>
-    <div class="deal-grid">
-      ${field("price", "Asking price", i.price, 1000, "€")}
-      ${field("size", "Size", i.size, 1, "m²")}
-      ${field("rentM2", "Market rent", i.rentM2, 0.5, "€/m²/mo")}
-      ${field("itpPct", "ITP", i.itpPct, 0.5, "%")}
-      ${field("notaryPct", "Notary + registry", i.notaryPct, 0.1, "%")}
-      ${field("capex", "Capex / works", i.capex, 1000, "€")}
-      ${field("vacancyPct", "Vacancy", i.vacancyPct, 1, "% rent")}
-      ${field("opexPct", "Opex (IBI, insurance…)", i.opexPct, 1, "% rent")}
-    </div>
-    <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Edit any input.</p>
-    <dl class="deal-outputs">${dealOutputsHtml(i)}</dl>
+  const maxRent = Math.max(40, Math.ceil(i.rentM2 * 2));
+  return `<section class="deal-calc card-section" data-deal-region="${i.region}">
+    <h3 class="card-section__title">Deal calculator</h3>
+    <label class="deal-slider"><span>Market rent <b data-rent-label>${i.rentM2} €/m²/mo</b>${i.rentIsAssumption ? ' <em class="deal-flag">assumed</em>' : ""}</span>
+      <input type="range" min="1" max="${maxRent}" step="0.5" value="${i.rentM2}" data-deal-slider="rentM2" /></label>
+    <div class="deal-visual">${dealVisualHtml(i)}</div>
+    <details class="deal-assumptions"><summary>Assumptions (price, taxes, costs)</summary>
+      <div class="deal-grid">
+        ${field("price", "Asking price", i.price, 1000, "€")}
+        ${field("size", "Size", i.size, 1, "m²")}
+        ${field("rentM2", "Market rent", i.rentM2, 0.5, "€/m²/mo")}
+        ${field("itpPct", "ITP", i.itpPct, 0.5, "%")}
+        ${field("notaryPct", "Notary + registry", i.notaryPct, 0.1, "%")}
+        ${field("capex", "Capex / works", i.capex, 1000, "€")}
+        ${field("vacancyPct", "Vacancy", i.vacancyPct, 1, "% rent")}
+        ${field("opexPct", "Opex (IBI, insurance…)", i.opexPct, 1, "% rent")}
+      </div>
+      <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Yields are pre-financing, pre-tax.</p>
+    </details>
   </section>`;
 }
 
@@ -154,7 +159,20 @@ function bindDealCalculator(root) {
   root.addEventListener("input", (event) => {
     const section = event.target.closest(".deal-calc");
     if (!section) return;
-    section.querySelector(".deal-outputs").innerHTML = dealOutputsHtml(readDealInputs(section));
+    const slider = event.target.dataset.dealSlider;
+    if (slider) {
+      const box = section.querySelector(`input[data-deal="${slider}"]`);
+      if (box) box.value = event.target.value;
+    } else if (event.target.dataset.deal === "rentM2") {
+      const sl = section.querySelector('input[data-deal-slider="rentM2"]');
+      if (sl) sl.value = event.target.value;
+    }
+    const i = readDealInputs(section);
+    const label = section.querySelector("[data-rent-label]");
+    if (label) label.textContent = `${i.rentM2} €/m²/mo`;
+    section.querySelector(".deal-visual").innerHTML = dealVisualHtml(i);
+    const kpi = root.querySelector("[data-hero-yield]");
+    if (kpi) kpi.textContent = dealFmtPct(dealMath(i).netYield);
   });
 }
 
@@ -174,24 +192,108 @@ const INV_ROWS = [
 
 function investorFieldsHtml(props) {
   const inv = props.inv || {};
-  const rows = INV_ROWS.filter(([k]) => inv[k] !== undefined && inv[k] !== "").map(([k, label]) => {
+  const rows = INV_ROWS.filter(([k]) => k !== "location" && inv[k] !== undefined && inv[k] !== "").map(([k, label]) => {
     let v = inv[k];
-    if (k === "days_on_market") v = `${v} (tracked since ${inv.first_seen})`;
+    if (k === "days_on_market") v = `${v} days (tracked since ${inv.first_seen})`;
     if (k === "community_costs_month") v = `${v} €/month`;
-    return `<div class="listing-spec-item"><div><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(v))}</dd></div></div>`;
+    return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(v))}</dd></div>`;
   });
-  rows.unshift(
-    `<div class="listing-spec-item"><div><dt>Price · size · €/m²</dt><dd>${escapeHtml(dealFmtEuro(props.p))} · ${escapeHtml(String(props.sz || "—"))} m² · ${escapeHtml(inv.price_m2 ? `${inv.price_m2.toLocaleString("es-ES")} €/m²` : "—")}</dd></div></div>`,
-  );
-  const link = inv.link || props.u;
-  return `<section class="listing-spec-section investor-fields">
-    <h3 class="listing-spec-section__title"><span>Investor summary</span></h3>
-    <dl class="listing-specs listing-specs--cols">${rows.join("")}</dl>
-    ${link ? `<p><a href="${escapeHtml(link)}" target="_blank" rel="noopener noreferrer">Open on Idealista ↗</a></p>` : ""}
+  return `<section class="card-section investor-fields">
+    <h3 class="card-section__title">The premises</h3>
+    <dl class="facts">${rows.join("")}</dl>
   </section>`;
 }
 
 function rawDetailsToggle(innerHtml) {
   if (!innerHtml || !innerHtml.trim()) return "";
   return `<details class="raw-details"><summary>Raw Idealista data (all scraped fields)</summary>${innerHtml}</details>`;
+}
+
+/* ---------- Visual layer (inline SVG, no deps) ---------- */
+
+function fitRingHtml(score, label = "Overall fit") {
+  const v = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
+  const r = 34;
+  const c = 2 * Math.PI * r;
+  const word = v >= 70 ? "Strong" : v >= 50 ? "Fair" : "Weak";
+  return `<div class="fit-ring" data-score="${v}" title="${label}: ${v}/100">
+    <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
+      <circle cx="40" cy="40" r="${r}" class="fit-ring__track"/>
+      <circle cx="40" cy="40" r="${r}" class="fit-ring__fill" stroke-dasharray="${((v / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 40 40)"/>
+      <text x="40" y="44" text-anchor="middle" class="fit-ring__num">${v}</text>
+    </svg>
+    <div class="fit-ring__text"><strong>${word} fit</strong><span>${escapeHtml(label)}</span></div>
+  </div>`;
+}
+
+/** Single-hue horizontal bars (neutral breakdown). parts: [{label, score, detail}] */
+function neutralBarsHtml(parts) {
+  if (!parts?.length) return "";
+  return `<ul class="nbars">${parts
+    .map((p) => {
+      const v = Math.max(0, Math.min(100, Math.round(Number(p.score) || 0)));
+      return `<li title="${escapeHtml(p.detail || "")}"><span class="nbars__label">${escapeHtml(p.label)}</span><span class="nbars__track"><span style="width:${v}%"></span></span><span class="nbars__val">${v}</span></li>`;
+    })
+    .join("")}</ul>`;
+}
+
+function costDonutHtml(i) {
+  const parts = [
+    ["Price", i.price, "var(--d1)"],
+    ["ITP", (i.price * i.itpPct) / 100, "var(--d2)"],
+    ["Notary + registry", (i.price * i.notaryPct) / 100, "var(--d3)"],
+    ["Capex", i.capex, "var(--d4)"],
+  ].filter((p) => p[1] > 0);
+  const total = parts.reduce((s, p) => s + p[1], 0) || 1;
+  const r = 30;
+  const c = 2 * Math.PI * r;
+  let offset = 0;
+  const arcs = parts
+    .map(([, v, col]) => {
+      const len = (v / total) * c;
+      const arc = `<circle cx="40" cy="40" r="${r}" fill="none" stroke="${col}" stroke-width="12" stroke-dasharray="${len.toFixed(2)} ${(c - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 40 40)"/>`;
+      offset += len;
+      return arc;
+    })
+    .join("");
+  const legend = parts
+    .map(([k, v, col]) => `<li><i style="background:${col}"></i>${k}<b>${dealFmtEuro(v)}</b></li>`)
+    .join("");
+  return `<div class="donut"><svg viewBox="0 0 80 80" width="120" height="120" aria-label="All-in cost breakdown">${arcs}<text x="40" y="38" text-anchor="middle" class="donut__k">All-in</text><text x="40" y="49" text-anchor="middle" class="donut__v">${Math.round(total / 1000).toLocaleString("es-ES")}k €</text></svg><ul class="donut__legend">${legend}</ul></div>`;
+}
+
+/** Net yield as a function of rent €/m²/mo, with the current rent marked. */
+function yieldCurveHtml(i) {
+  const W = 260, H = 120, L = 30, B = 20, T = 8, R = 8;
+  const cur = Math.max(1, i.rentM2);
+  const maxRent = Math.max(30, Math.ceil(cur * 1.6));
+  const y = (rent) => dealMath({ ...i, rentM2: rent }).netYield || 0;
+  const maxY = Math.max(12, Math.ceil(y(maxRent) / 2) * 2);
+  const sx = (r) => L + (r / maxRent) * (W - L - R);
+  const sy = (v) => H - B - (Math.max(0, v) / maxY) * (H - B - T);
+  const pts = Array.from({ length: 21 }, (_, k) => (k / 20) * maxRent).map((r) => `${sx(r).toFixed(1)},${sy(y(r)).toFixed(1)}`).join(" ");
+  const target = 7; // typical retail investor target net yield
+  const cx = sx(cur), cy = sy(y(cur));
+  const yTicks = [0, maxY / 2, maxY].map((v) => `<text x="${L - 4}" y="${sy(v) + 3}" text-anchor="end">${v}%</text>`).join("");
+  return `<svg class="ycurve" viewBox="0 0 ${W} ${H}" aria-label="Net yield vs rent">
+    <line x1="${L}" y1="${sy(target)}" x2="${W - R}" y2="${sy(target)}" class="ycurve__target"/><text x="${W - R}" y="${sy(target) - 3}" text-anchor="end" class="ycurve__tlabel">${target}% target</text>
+    <polyline points="${pts}" class="ycurve__line"/>
+    <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${H - B}" class="ycurve__drop"/>
+    <circle cx="${cx}" cy="${cy}" r="4" class="ycurve__dot"/>
+    <text x="${Math.min(cx + 6, W - 60)}" y="${Math.max(cy - 6, 12)}" class="ycurve__dotlabel">${(y(cur) || 0).toFixed(1)}%</text>
+    <line x1="${L}" y1="${H - B}" x2="${W - R}" y2="${H - B}" class="ycurve__axis"/>
+    ${yTicks}
+    <text x="${L}" y="${H - 5}">0</text><text x="${W - R}" y="${H - 5}" text-anchor="end">${maxRent} €/m²/mo rent</text>
+  </svg>`;
+}
+
+function dealKpisHtml(i) {
+  const m = dealMath(i);
+  const k = (label, value, strong) => `<div class="kpi${strong ? " kpi--strong" : ""}"><span>${label}</span><b>${value}</b></div>`;
+  return `${k("Net yield", dealFmtPct(m.netYield), true)}${k("Gross yield", dealFmtPct(m.grossYield))}${k("Payback", dealFmtYears(m.payback))}${k("Net rent / yr", dealFmtEuro(m.netRent))}`;
+}
+
+function dealVisualHtml(i) {
+  return `<div class="deal-kpis">${dealKpisHtml(i)}</div>
+  <div class="deal-charts"><figure><figcaption>Net yield vs. rent</figcaption>${yieldCurveHtml(i)}</figure><figure><figcaption>Where the money goes</figcaption>${costDonutHtml(i)}</figure></div>`;
 }

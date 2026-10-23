@@ -4,3 +4,4 @@ SESSION_SECRET=any-long-random-string
 GOOGLE_MAPS_API_KEY=
 OPENROUTESERVICE_API_KEY=
 # AUTH_DISABLED=1   # local only: skip the login screen
+# REQUIRE_LOGIN=true  # opt in to the password gate (public by default)

@@ -1185,6 +1185,12 @@ function modalFitSectionHtml(areaProps, concept) {
 }
 
 function refreshFitScoresUi(areaScore, walkScore) {
+  const ring = detailModalBody.querySelector(".lfit__ring");
+  if (ring && Number.isFinite(walkScore)) {
+    ring.innerHTML = fitRingHtml(combinedFitScore(areaScore, walkScore), "neighbourhood + 10-min walk");
+    const sub = detailModalBody.querySelector('[data-sub="walk"]');
+    if (sub) sub.textContent = Math.round(walkScore);
+  }
   const proxEl = detailModalBody.querySelector(".fit-score-proximity");
   const overallEl = detailModalBody.querySelector(".fit-score-overall");
   if (proxEl && Number.isFinite(walkScore)) {
@@ -1272,6 +1278,15 @@ function openDetailModal(html) {
 bindDealCalculator(detailModalBody);
 
 detailModalBody.addEventListener("click", (event) => {
+  const nav = event.target.closest(".lhero__nav");
+  if (nav) {
+    const thumbs = [...detailModalBody.querySelectorAll(".modal-thumb-btn")];
+    const cur = thumbs.findIndex((n) => n.classList.contains("is-active"));
+    const next = thumbs[(cur + Number(nav.dataset.step) + thumbs.length) % thumbs.length];
+    next?.click();
+    next?.scrollIntoView({ block: "nearest", inline: "center" });
+    return;
+  }
   const button = event.target.closest(".modal-thumb-btn");
   if (!button) return;
   const hero = detailModalBody.querySelector(".modal-hero img");
@@ -1281,7 +1296,9 @@ detailModalBody.addEventListener("click", (event) => {
   detailModalBody.querySelectorAll(".modal-thumb-btn").forEach((node) => {
     node.classList.toggle("is-active", node === button);
   });
-  hero.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  const idx = detailModalBody.querySelector("[data-idx]");
+  if (idx) idx.textContent = [...detailModalBody.querySelectorAll(".modal-thumb-btn")].indexOf(button) + 1;
+  if (!button.closest(".lhero__strip")) hero.scrollIntoView({ block: "nearest", behavior: "smooth" });
 });
 
 function closeDetailModal() {
@@ -1316,37 +1333,82 @@ function listingMediaHtml(images, url, topBarHtml = "") {
   return `<div class="modal-media">${topBarHtml}<div class="modal-hero modal-hero--placeholder" aria-hidden="true">${badge}${iconSvg("building", "modal-hero__icon")}</div></div>`;
 }
 
+function listingFitHtml(areaProps, concept) {
+  if (!areaProps) {
+    return `<section class="card-section lfit"><p class="live-note">No barrio score for this pin yet.</p><div class="visit-live fit-subsection--walk" hidden></div></section>`;
+  }
+  return `<section class="card-section lfit">
+    <div class="lfit__head">
+      <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${fitRingHtml(areaProps.score, `for ${concept} · area only until the walk loads`)}</div>
+      <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
+    </div>
+    <details class="lfit__why">
+      <summary>Why this score</summary>
+      <h4>Neighbourhood <span data-sub="area">${Math.round(areaProps.score)}</span></h4>
+      ${neutralBarsHtml(areaProps.parts)}
+      <h4>10-minute walk <span data-sub="walk">…</span></h4>
+      <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
+    </details>
+  </section>`;
+}
+
+function listingHeroHtml(images, url) {
+  const badge = idealistaBadge(url);
+  if (!images.length) {
+    return `<div class="lhero lhero--empty">${badge}${iconSvg("building", "modal-hero__icon")}</div>`;
+  }
+  const nav = images.length > 1
+    ? `<button type="button" class="lhero__nav lhero__nav--prev" data-step="-1" aria-label="Previous photo">‹</button><button type="button" class="lhero__nav lhero__nav--next" data-step="1" aria-label="Next photo">›</button><span class="lhero__count"><span data-idx>1</span> / ${images.length}</span>`
+    : "";
+  const dots = images.length > 1
+    ? `<div class="lhero__strip">${images.map((src, i) => `<button type="button" class="modal-thumb-btn${i === 0 ? " is-active" : ""}" data-image="${escapeHtml(src)}"><img src="${escapeHtml(src)}" alt="" loading="lazy" /></button>`).join("")}</div>`
+    : "";
+  return `<div class="lhero modal-hero">${badge}<img src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
+}
+
 function listingModalContent(props) {
   const detail = props.x || {};
   const images = (detail.imgs?.length ? detail.imgs : detail.thumb ? [detail.thumb] : []).slice(0, 16);
-  const mediaTopBar = listingMediaTopBarHtml(props, detail);
-  const media = listingMediaHtml(images, props.u, mediaTopBar);
   const location = [props.n, props.d].filter(Boolean).join(", ");
   const feature = state.listingById.get(props.id);
   const coords = feature?.geometry?.coordinates;
-  const factsHtml = `${investorFieldsHtml(props)}${dealCalculatorHtml(props, coords, state.listings)}${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}`;
-  const desc = detail.desc ? listingDescriptionHtml(detail.desc) : "";
   const area = state.areaById?.get(props.i);
   const areaProps = area?.properties;
   const concept = (state.query?.label || "your concept").toLowerCase();
-  const fitBlock = modalFitSectionHtml(areaProps, concept);
+  const di = props.op === "rent" ? null : dealInputs(props, coords, state.listings);
+  const dm = di ? dealMath(di) : null;
+  const pm2 = props.p && props.sz ? Math.round(props.p / props.sz) : null;
+  const kpi = (label, value, attr = "") => `<div class="lkpi"><span>${label}</span><b ${attr}>${value}</b></div>`;
+  const kpis = `<div class="lkpis">
+    ${kpi("Asking price", props.p ? formatEuro(props.p) : "—")}
+    ${kpi("€/m²", pm2 ? `${formatNumber(pm2)} €` : "—")}
+    ${kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
+    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), "data-hero-yield") : ""}
+  </div>`;
+  const desc = detail.desc
+    ? `<details class="card-section ldesc"><summary>Listing description</summary><div class="listing-desc listing-desc--full">${escapeHtml(String(detail.desc))}</div></details>`
+    : "";
   const partialNote = props.full
     ? ""
-    : `<p class="listing-partial-note">This lead is from a search snapshot only. Re-scrape with <strong>fetchDetails</strong> on Idealista to unlock full characteristics.</p>`;
-  return `<article class="modal-listing" id="detail-modal-title">
-    <header class="modal-listing__head">
-      <div class="tag-row">
-        <span class="status-pill">Commercial premises</span>
-        <span class="status-pill status-pill--sale">For sale</span>
+    : `<p class="listing-partial-note">Search-snapshot lead only — re-scrape with <strong>fetchDetails</strong> for full characteristics.</p>`;
+  return `<article class="modal-listing modal-listing--v2" id="detail-modal-title">
+    ${listingHeroHtml(images, props.u)}
+    <header class="lhead">
+      <div class="lhead__text">
+        <div class="tag-row"><span class="status-pill">Commercial premises</span><span class="status-pill status-pill--sale">For sale</span>${listingEngagementTagsHtml(detail)}</div>
+        <h2>${escapeHtml(listingHeadline(props))}</h2>
+        ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
-      <h2>${escapeHtml(listingHeadline(props))}</h2>
-      ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
     </header>
+    ${kpis}
     ${partialNote}
-    ${media}
-    ${factsHtml}
-    ${fitBlock}
+    <div class="lgrid">
+      ${listingFitHtml(areaProps, concept)}
+      ${investorFieldsHtml(props)}
+    </div>
+    ${dealCalculatorHtml(props, coords, state.listings)}
     ${desc}
+    ${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}
   </article>`;
 }
 
@@ -1417,10 +1479,10 @@ function listingCard(props, { wrap = true } = {}) {
   const area = state.areaById?.get(props.i);
   const areaProps = area?.properties;
   const feature = state.listingById.get(props.id);
-  const specsHtml = `${dealSummaryHtml(props, feature?.geometry?.coordinates, state.listings)}${investorFieldsHtml(props)}`;
+  const specsHtml = dealSummaryHtml(props, feature?.geometry?.coordinates, state.listings);
   const fitHtml = areaProps
-    ? `<p class="kicker">Area fit</p>${scoreBarHtml(areaProps.score, "Area fit", true)}${partsHtml(areaProps.parts)}`
-    : `<p class="kicker">Area fit</p><p class="unit-note">No neighborhood score for this pin yet.</p>`;
+    ? `<div class="card-fit">${fitRingHtml(areaProps.score, "area fit")}</div>`
+    : `<p class="unit-note">No neighborhood score for this pin yet.</p>`;
   const inner = `
     <div class="tag-row">
       <span class="status-pill">Commercial premises</span>

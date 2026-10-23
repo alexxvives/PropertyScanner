@@ -23,7 +23,8 @@ The deployed app is **private by default**.
 
 | Name | Kind | Purpose |
 | --- | --- | --- |
-| `APP_PASSWORD` | secret (required) | Shared password for `/login`. Without it the Worker returns 503. |
+| `REQUIRE_LOGIN` | var (in `wrangler.jsonc`, default `"false"`) | Site is public by default. Set to `"true"` to require the `/login` password for everything. |
+| `APP_PASSWORD` | secret (needed only when `REQUIRE_LOGIN=true`) | Shared password for `/login`. With login on and no password the Worker returns 503. |
 | `SESSION_SECRET` | secret (recommended) | Signs the 30-day `ps_session` cookie (falls back to `APP_PASSWORD`; changing it logs everyone out). |
 | `GOOGLE_MAPS_API_KEY` | secret | `/api/nearby` |
 | `OPENROUTESERVICE_API_KEY` | secret | `/api/walk` |

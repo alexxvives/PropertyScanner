@@ -108,9 +108,11 @@ function clientIp(request) {
 
 async function allowRequest(request, env, scope) {
   const key = `${scope}:${clientIp(request)}`;
+  // The platform binding is eventually consistent per location and can be lenient
+  // under bursts, so the per-isolate limiter below always applies as well.
   if (env.API_LIMITER?.limit) {
     const { success } = await env.API_LIMITER.limit({ key });
-    return success;
+    if (!success) return false;
   }
   const now = Date.now();
   const hits = (memoryHits.get(key) || []).filter((t) => now - t < FALLBACK_LIMIT.windowMs);

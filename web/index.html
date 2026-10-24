@@ -49,6 +49,15 @@
         </div>
       </div>
 
+      <label class="tenant-pick">
+        <span class="field-label">Tenant</span>
+        <select id="tenant-select" class="tenant-select">
+          <option value="">Any tenant (score by business type)</option>
+          <option value="aldi">Aldi · supermarket</option>
+        </select>
+      </label>
+      <p class="tenant-note unit-note" id="tenant-note" hidden></p>
+
       <div class="jump-row" id="jump-row">
         <span class="field-label">Explore the map · rankings follow the view</span>
         <div class="jump-row__btns">
@@ -89,6 +98,7 @@
     <script src="vendor/maplibre-gl.js"></script>
     <script src="icons.js"></script>
     <script src="deal.js"></script>
+    <script src="tenant.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

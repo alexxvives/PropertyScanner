@@ -751,10 +751,65 @@ def curate_listing(props: dict, detail: dict, first_seen: dict[str, str], today:
         "thumb": detail.get("thumb") or "",
         "photo_tags": (detail.get("imgTags") or [])[:16],
         "desc_ca": raw.get("comments.ca") or "",
+        # --- round 6: original-language + translations, structured specs (raw dump removed from card) ---
+        "desc_es": raw.get("comments.es") or raw.get("propertyComment") or "",
+        "desc_en": raw.get("comments.en") or "",
+        **_specs(detail, raw),
         "title_en": raw.get("suggestedTexts.title") or "",
     }
     keep_zero = {"days_on_market"}
     return {k: v for k, v in inv.items() if k in keep_zero or v not in ("", None, [], {}, False, 0)}
+
+
+def _orig_lang(comments) -> str:
+    try:
+        return str(json.loads(comments).get("defaultLanguage") or "") if isinstance(comments, str) else ""
+    except ValueError:
+        return ""
+
+
+def _specs(detail: dict, raw: dict) -> dict:
+    """Structured specs for the card's Details tab and tenant hard filters."""
+    basics = [str(b) for b in detail.get("basics") or []]
+    out: dict = {}
+    for line in basics:
+        m = re.match(r"Facade length: (\d+(?:[.,]\d+)?) m", line)
+        if m:
+            out["facade_m"] = float(m.group(1).replace(",", "."))
+        m = re.match(r"Built in (\d{4})", line)
+        if m:
+            out["year_built"] = int(m.group(1))
+    fa = raw.get("moreCharacteristics.facadeArea")
+    if "facade_m" not in out and fa:
+        out["facade_band"] = {"moreThanTwelve": "> 12 m", "nineToTwelveMeters": "9–12 m"}.get(fa, fa)
+    for key, src in (("usable_m2", "moreCharacteristics.usableArea"), ("shop_windows", "moreCharacteristics.Shop windows"),
+                     ("floors_in_unit", "moreCharacteristics.Floors in unit"), ("rooms", "moreCharacteristics.Rooms / divisions"),
+                     ("bathrooms", "moreCharacteristics.Bathrooms (detail)"), ("transfer_cost", "moreCharacteristics.transferCost")):
+        v = _num(raw.get(src))
+        if v:
+            out[key] = v
+    yes = lambda k: raw.get(f"moreCharacteristics.{k}")
+    out["equip"] = {k: v for k, v in {
+        "ac": True if detail.get("ac") or raw.get("features.hasAirConditioning") == "Yes" else None,
+        "heating": True if any(b.lower() == "heating" for b in basics) else None,
+        "corner": {"Yes": True, "No": False}.get(yes("Corner unit")),
+        "smoke": {"Yes": True, "No": False}.get(yes("Smoke extractor")),
+        "kitchen": {"Yes": True, "No": False}.get(yes("Fully equipped kitchen")),
+        "storeroom": {"Yes": True, "No": False}.get(yes("Storeroom / archive")),
+        "alarm": {"Yes": True, "No": False}.get(yes("Alarm")),
+        "camera": {"Yes": True, "No": False}.get(yes("Security camera")),
+        "door": {"Yes": True, "No": False}.get(yes("Security door")),
+        "accessible_wc": {"Yes": True, "No": False}.get(yes("handicapedBaths")),
+    }.items() if v is not None}
+    loc = raw.get("moreCharacteristics.Location type")
+    if loc:
+        out["location_type"] = {"street": "Street level", "others": "Other", "ontopfloor": "Upper floor", "mezzanine": "Mezzanine",
+                                "underground": "Basement", "shoppingCenter": "Shopping centre"}.get(loc, loc)
+    if raw.get("moreCharacteristics.lastCommercialActivity"):
+        out["last_activity"] = raw["moreCharacteristics.lastCommercialActivity"]
+    if raw.get("moreCharacteristics.Building type") == "industrialBuilding":
+        out["building_type"] = "Industrial building (nave)"
+    return out
 
 
 def _activity(detail: dict) -> dict:
@@ -827,6 +882,9 @@ INVESTOR_FIELDS = [
     "highlighted", "new_dev_highlight", "auction", "transfer", "labels", "price_drop_pct",
     "price_drop_eur", "price_drop_date_ms", "energy", "features", "media", "photo_count",
     "thumb", "photo_tags", "desc_ca", "title_en",
+    "desc_es", "desc_en", "facade_m", "facade_band", "year_built", "usable_m2",
+    "shop_windows", "floors_in_unit", "rooms", "bathrooms", "transfer_cost", "equip", "location_type",
+    "last_activity", "building_type",
 ]
 
 

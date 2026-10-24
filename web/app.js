@@ -565,8 +565,8 @@ function neighborhoodFitLines(props, query) {
     lines.push(`€${formatNumber(Math.round(props.income_eur))} disposable income per person${year}`);
   }
   if (Number.isFinite(props.age_mean)) {
-    const older = Number.isFinite(props.pct_65) ? `, ${props.pct_65}% aged 65 or over` : "";
-    lines.push(`Mean age ${props.age_mean}${older}`);
+    const med = Number.isFinite(props.age_median) ? `median age ${props.age_median}, ` : "";
+    lines.push(`Residents' ${med}mean age ${props.age_mean}`);
   }
   if (Number.isFinite(props.metro_stops) || Number.isFinite(props.bus_stops)) {
     lines.push(`${formatNumber(props.metro_stops || 0)} metro stations, ${formatNumber(props.bus_stops || 0)} bus stops`);
@@ -771,6 +771,17 @@ function areasInView() {
   });
 }
 
+/** Neighbourhood percentile within its own city (same treatment as listings). */
+function areaRank(props) {
+  const pool = (state.areas?.features || []).map((f) => f.properties).filter((p) => p.city === props.city && Number(p.score) >= 0);
+  const above = pool.filter((p) => p.score > props.score).length;
+  const equal = pool.filter((p) => p.score === props.score).length;
+  const n = pool.length || 1;
+  const pct = Math.round(100 * (n - above - Math.max(1, equal)) / Math.max(1, n - 1));
+  const top = Math.max(1, Math.ceil((100 * (above + Math.max(1, equal))) / n));
+  return { pct: Math.max(0, Math.min(100, pct)), n, text: `Top ${top}% of ${props.city}` };
+}
+
 function renderAreaRanking() {
   if (!areaRanking || !areaRankingTitle) return;
   const rows = areasInView()
@@ -789,11 +800,27 @@ function renderAreaRanking() {
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(props.name)}</span>
         <span class="row-city">${escapeHtml(props.city)}</span>
-        <span class="row-area-score">${scoreBarHtml(props.score, "Area fit", false, true)}</span>
+        <span class="row-area-score">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} barrios · raw fit ${Math.round(props.score)}`, false, true, `${r.text} · raw ${Math.round(props.score)}`); })()}</span>
       </button></li>`;
     })
     .join("");
 }
+
+function refreshTenantEval() {
+  state.tenantEval = state.tenant && state.listings?.length ? evaluateTenant(state.tenant, state.listings, state.areaById) : null;
+}
+
+document.addEventListener("change", (event) => {
+  if (event.target.id !== "tenant-select") return;
+  state.tenant = TENANTS[event.target.value] || null;
+  const note = document.getElementById("tenant-note");
+  if (state.tenant) {
+    if (state.query?.id !== state.tenant.concept) document.querySelector(`#business-menu [data-value="${state.tenant.concept}"]`)?.click();
+    if (note) { note.hidden = false; note.innerHTML = `${escapeHtml(state.tenant.blurb)} <a href="${state.tenant.sources[0].url}" target="_blank" rel="noopener">Source</a>`; }
+  } else if (note) note.hidden = true;
+  refreshTenantEval();
+  renderListingRanking();
+});
 
 function rankableListings() {
   if (!state.listings.length) return [];
@@ -818,7 +845,18 @@ function listingHasAreaFit(props) {
   return Boolean(area && area.properties.score >= 0);
 }
 
+function tenantRowCaption(ev) {
+  return `${state.tenant.name}: ✓${ev.pass} ✗${ev.fail} ?${ev.unknown}`;
+}
+
 function buildOverallRanking() {
+  if (state.tenant && state.tenantEval) {
+    const rows = rankableListings().map((r) => ({ ...r, tev: state.tenantEval.get(r.id) })).filter((r) => r.tev);
+    const ok = rows.filter((r) => r.tev.ok);
+    state.tenantNearMiss = !ok.length;
+    const pool = ok.length ? ok : rows;
+    return pool.sort((a, b) => a.tev.fail - b.tev.fail || b.tev.soft - a.tev.soft).slice(0, 14);
+  }
   return rankableListings()
     .sort((a, b) => {
       const fitDelta = Number(listingHasAreaFit(b.props)) - Number(listingHasAreaFit(a.props));
@@ -831,18 +869,19 @@ function buildOverallRanking() {
 function renderListingRanking() {
   if (!listingRanking || !listingRankingTitle) return;
   const items = buildOverallRanking();
-  listingRankingTitle.textContent = rankingConceptTitle("property");
+  listingRankingTitle.textContent = state.tenant ? `Property ranking · ${state.tenant.name}${state.tenantNearMiss ? " (no full pass in view — closest)" : " · hard filters passed"}` : rankingConceptTitle("property");
   listingRanking.innerHTML = items.length
     ? items
         .map((item, index) => {
-          const title = listingHeadline(item.props);
+          const title = listingShortTitle(item.props);
           const meta = [item.areaName, item.city].filter(Boolean).join(", ");
+          const tev = state.tenantEval?.get(item.id);
           return `<li><button type="button" data-kind="listing" data-id="${escapeHtml(item.id)}">
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}</span>
-        <span class="score-bar-wrap">${scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, `${item.rank.text} · raw ${item.rank.raw}`)}</span>
+        <span class="score-bar-wrap">${tev ? scoreBarHtml(tev.soft, `${state.tenant.name} soft score ${tev.soft}/100`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, `${item.rank.text} · raw ${item.rank.raw}`)}</span>
       </button></li>`;
         })
         .join("")
@@ -1006,6 +1045,23 @@ function collectRankableListings({ restrictToBounds = false } = {}) {
     });
   }
   return rows;
+}
+
+/** Short card title without address/neighbourhood: "Local en venta · Calle de Zamora". */
+function listingShortTitle(props) {
+  const raw = String(props.t || "").trim();
+  const op = props.op === "rent" ? "alquiler" : "venta";
+  const m = raw.match(/^(.*?)\s+en\s+(.*)$/i);
+  const type = (m ? m[1] : raw || "Local").replace(/\s+en\s+(venta|alquiler)$/i, "");
+  const drop = new Set([props.n, props.d, props.m, "Madrid", "Barcelona"].filter(Boolean).map((x) => String(x).trim().toLowerCase()));
+  const parts = (m ? m[2] : "").split(",").map((x) => x.trim()).filter((x) => x && !drop.has(x.toLowerCase()) && !/^\d+[a-z]?$/i.test(x) && !/^s\/n$/i.test(x));
+  const street = parts.find((x) => /^(calle|avenida|av\.|paseo|plaza|ronda|carrer|passeig|avinguda|pla[cç]a|via|travessera|gran|camino|carretera|glorieta|traves[ií]a|cuesta|rambla|costa|ctra)/i.test(x)) || "";
+  return `${type} en ${op}${street ? ` · ${street}` : ""}`;
+}
+
+function listingPlaceLine(props) {
+  const city = cityOfId(props.i) || props.m || "";
+  return [props.n, props.d && props.d !== props.n ? props.d : "", city].filter(Boolean).join(", ");
 }
 
 function listingHeadline(props) {
@@ -1424,7 +1480,7 @@ const WHY_GROUPS = [
       { part: () => scorePartLabel("foot"), name: "Footfall (open premises)", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
       { part: () => scorePartLabel("popDensity"), name: "Residents", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
       { part: () => scorePartLabel("income"), name: "Disposable income", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
-      { part: () => "Older residents", name: "Aged 65+", get: (p) => p.pct_65, fmt: (v) => `${v}%` },
+      { part: () => "Age profile", name: "Median age", get: (p) => p.age_median ?? p.age_mean, fmt: (v, p) => `${v} yrs · mean ${p.age_mean ?? "–"} · 65+ ${p.pct_65 ?? "–"}%` },
     ],
   },
   {
@@ -1503,6 +1559,8 @@ function listingFitHtml(areaProps, concept, props) {
       </div>
     </div>
     ${whyScoreHtml(areaProps)}
+    ${ageChartHtml(areaProps)}
+    ${state.tenant && props ? tenantChecksHtml(state.tenant, state.tenantEval?.get(props.id)) : ""}
     <details class="lwhy__walk" open><summary>Around this door (10-minute walk)</summary>
       <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
     </details>
@@ -1526,7 +1584,7 @@ function listingHeroHtml(images, url) {
 function listingModalContent(props) {
   const detail = props.x || {};
   const images = (detail.imgs?.length ? detail.imgs : detail.thumb ? [detail.thumb] : []).slice(0, 16);
-  const location = [props.n, props.d].filter(Boolean).join(", ");
+  const location = listingPlaceLine(props);
   const feature = state.listingById.get(props.id);
   const coords = feature?.geometry?.coordinates;
   const area = state.areaById?.get(props.i);
@@ -1542,9 +1600,6 @@ function listingModalContent(props) {
     ${kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
     ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), "data-hero-yield") : ""}
   </div>`;
-  const desc = detail.desc
-    ? `<details class="card-section ldesc"><summary>Listing description</summary><div class="listing-desc listing-desc--full">${escapeHtml(String(detail.desc))}</div></details>`
-    : "";
   const partialNote = props.full
     ? ""
     : `<p class="listing-partial-note">Search-snapshot lead only — re-scrape with <strong>fetchDetails</strong> for full characteristics.</p>`;
@@ -1553,29 +1608,27 @@ function listingModalContent(props) {
     <header class="lhead">
       <div class="lhead__text">
         <div class="tag-row"><span class="status-pill">Commercial premises</span>${opTagHtml(props, "status-pill")}${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
-        <h2>${escapeHtml(listingHeadline(props))}</h2>
+        <h2>${escapeHtml(listingShortTitle(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
     </header>
     ${kpis}
-    <nav class="lnav" aria-label="Card sections">
-      <a href="#sec-overview" data-sec="sec-overview">Overview</a>
-      <a href="#sec-why" data-sec="sec-why">Why this score</a>
-      ${dm ? `<a href="#sec-deal" data-sec="sec-deal">Deal</a>` : ""}
-      <a href="#sec-details" data-sec="sec-details">Details</a>
+    <nav class="lnav" role="tablist" aria-label="Card sections">
+      <button type="button" role="tab" class="is-on" aria-selected="true" data-sec="sec-overview">Overview</button>
+      <button type="button" role="tab" aria-selected="false" data-sec="sec-why">Why this score</button>
+      ${dm ? `<button type="button" role="tab" aria-selected="false" data-sec="sec-deal">Deal</button>` : ""}
+      <button type="button" role="tab" aria-selected="false" data-sec="sec-details">Details</button>
     </nav>
-    <div id="sec-overview" class="lsec">
+    <div id="sec-overview" class="lsec" role="tabpanel">
       ${partialNote}
       ${listingActivityHtml(props.inv || {})}
       ${listingFeaturesHtml(props.inv || {})}
+      ${listingDescToggleHtml(props)}
     </div>
-    <div id="sec-why" class="lsec">${listingFitHtml(areaProps, concept, props)}</div>
-    <div id="sec-deal" class="lsec">${dealCalculatorHtml(props, coords, state.listings)}</div>
-    <div id="sec-details" class="lsec">
+    <div id="sec-why" class="lsec" role="tabpanel" hidden>${listingFitHtml(areaProps, concept, props)}</div>
+    ${dm ? `<div id="sec-deal" class="lsec" role="tabpanel" hidden>${dealCalculatorHtml(props, coords, state.listings)}</div>` : ""}
+    <div id="sec-details" class="lsec" role="tabpanel" hidden>
       ${investorFieldsHtml(props)}
-      ${props.inv?.desc_ca ? `<details class="card-section ldesc"><summary>Descripció (català)</summary><div class="listing-desc listing-desc--full">${escapeHtml(props.inv.desc_ca)}</div></details>` : ""}
-      ${desc}
-      ${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}
     </div>
   </article>`;
 }
@@ -1589,6 +1642,7 @@ function areaModalContent(props) {
     ${visitReasonHtml(props)}
     ${modalFitSectionHtml(props, concept)}
     ${censusBlock(lines)}
+    ${ageChartHtml(props)}
   </article>`;
 }
 
@@ -1690,6 +1744,24 @@ function shopCard(props, { wrap = true, pinned = false } = {}) {
     ${live}`;
   if (!wrap) return inner;
   return `<div class="place-card" style="--strip:${strip}">${inner}</div>`;
+}
+
+const AGE_LABELS = ["0–14", "15–24", "25–44", "45–64", "65+"];
+/** Age distribution mini bar chart, barrio vs city average. */
+function ageChartHtml(p) {
+  if (!p?.age_bands?.length) return "";
+  const cityPool = (state.areas?.features || []).map((f) => f.properties).filter((x) => x.city === p.city && x.age_bands?.length);
+  const avg = AGE_LABELS.map((_, i) => cityPool.reduce((s, x) => s + x.age_bands[i], 0) / (cityPool.length || 1));
+  const max = Math.max(...p.age_bands, ...avg, 1);
+  const bars = p.age_bands
+    .map((v, i) => `<div class="agec__col" title="${AGE_LABELS[i]}: ${v}% (city ${avg[i].toFixed(1)}%)"><div class="agec__bar"><span class="agec__fill" style="height:${(100 * v / max).toFixed(1)}%"></span><span class="agec__avg" style="bottom:${(100 * avg[i] / max).toFixed(1)}%"></span></div><b>${Math.round(v)}%</b><small>${AGE_LABELS[i]}</small></div>`)
+    .join("");
+  return `<section class="card-section agec">
+    <h3 class="card-section__title">Who lives here</h3>
+    <p class="agec__nums"><span><b>${p.age_median ?? "–"}</b> median age</span><span><b>${p.age_mean ?? "–"}</b> mean age</span></p>
+    <div class="agec__chart">${bars}</div>
+    <p class="unit-note">Share of residents by age band; tick = ${escapeHtml(p.city)} average. Padrón municipal 2026 (${p.city === "Barcelona" ? "Open Data BCN" : "datos.madrid.es"}).</p>
+  </section>`;
 }
 
 function censusBlock(lines) {
@@ -2341,6 +2413,7 @@ async function bootstrapAppData() {
     const pool = FULL_DETAIL_LEADS_ONLY && fullListings.length ? fullListings : allListings;
     state.listings = dedupeListingFeatures(pool);
     state.listingById = new Map(state.listings.map((feature) => [feature.properties.id, feature]));
+    refreshTenantEval();
     tallyListings();
     readInputs(false);
     syncPins();
@@ -2661,13 +2734,38 @@ map.on("error", (event) => {
 });
 
 
-// Card section nav (Overview / Why / Deal / Details): smooth-scroll inside the modal.
+// Card tabs (Overview / Why / Deal / Details): one panel visible at a time.
 document.addEventListener("click", (event) => {
-  const link = event.target.closest(".lnav a[data-sec]");
-  if (!link) return;
-  event.preventDefault();
-  document.getElementById(link.dataset.sec)?.scrollIntoView({ behavior: "smooth", block: "start" });
-  link.parentElement.querySelectorAll("a").forEach((a) => a.classList.toggle("is-on", a === link));
+  const tab = event.target.closest(".lnav [data-sec]");
+  if (tab) {
+    const card = tab.closest("article");
+    card.querySelectorAll(".lnav [data-sec]").forEach((b) => {
+      const on = b === tab;
+      b.classList.toggle("is-on", on);
+      b.setAttribute("aria-selected", String(on));
+    });
+    card.querySelectorAll(".lsec").forEach((sec) => { sec.hidden = sec.id !== tab.dataset.sec; });
+    return;
+  }
+  const lang = event.target.closest(".ldesc2 [data-lang]");
+  if (lang) {
+    const box = lang.closest(".ldesc2");
+    box.querySelectorAll("[data-lang]").forEach((b) => b.classList.toggle("is-on", b === lang));
+    box.querySelectorAll("[data-text]").forEach((t) => { t.hidden = t.dataset.text !== lang.dataset.lang; });
+  }
+});
+
+// Donut hover: highlight segment, show € and % in the centre.
+document.addEventListener("pointerover", (event) => {
+  const seg = event.target.closest(".donut [data-seg]");
+  const donut = event.target.closest(".donut");
+  if (!donut) return;
+  const idx = seg?.dataset.seg;
+  donut.classList.toggle("is-hover", idx != null);
+  donut.querySelectorAll("[data-seg]").forEach((el) => el.classList.toggle("is-on", el.dataset.seg === idx));
+  const k = donut.querySelector(".donut__k"), v = donut.querySelector(".donut__v");
+  if (idx != null) { k.textContent = `${seg.dataset.label} · ${seg.dataset.pct}%`; v.textContent = seg.dataset.eur; }
+  else { k.textContent = "All-in"; v.textContent = donut.dataset.total; }
 });
 
 // ---- Responsive: on phones the area ranking moves into the bottom sheet (tabs: Neighbourhoods / Listings).

@@ -179,6 +179,18 @@ function bindDealCalculator(root) {
 const INV_ROWS = [
   ["location", "Location"],
   ["floor", "Floor"],
+  ["location_type", "Position"],
+  ["usable_m2", "Usable area"],
+  ["facade_m", "Facade length"],
+  ["facade_band", "Facade (band)"],
+  ["shop_windows", "Shop windows"],
+  ["floors_in_unit", "Floors in unit"],
+  ["rooms", "Rooms"],
+  ["bathrooms", "Toilets / bathrooms"],
+  ["year_built", "Year built"],
+  ["building_type", "Building"],
+  ["last_activity", "Last activity"],
+  ["transfer_cost", "Transfer (traspaso)"],
   ["storefront", "Storefront / frontage"],
   ["condition", "Condition"],
   ["current_use", "Current use / tenant"],
@@ -200,6 +212,9 @@ function investorFieldsHtml(props) {
     let v = inv[k];
     if (k === "days_on_market") v = `${v} days (tracked since ${inv.first_seen})`;
     if (k === "community_costs_month") v = `${v} €/month`;
+    if (k === "usable_m2") v = `${v} m²`;
+    if (k === "facade_m") v = `${v} m`;
+    if (k === "transfer_cost") v = typeof v === "number" ? dealFmtEuro(v) : v;
     if (k === "advertiser_type") v = v === "private" ? "Private owner" : "Agency / professional";
     if (k === "phone") return `<div class="fact"><dt>${label}</dt><dd><a href="tel:${escapeHtml(String(v).replace(/\s/g, ""))}">${escapeHtml(String(v))}</a></dd></div>`;
     return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(v))}</dd></div>`;
@@ -249,12 +264,50 @@ function listingActivityHtml(inv) {
 }
 
 /** Equipment / features chips (all characteristics + "Yes" extras). */
+const EQUIP_GROUPS = [
+  ["Comfort", [["ac", "❄", "Air conditioning"], ["heating", "♨", "Heating"], ["kitchen", "🍳", "Equipped kitchen"], ["accessible_wc", "♿", "Accessible WC"]]],
+  ["Security", [["alarm", "🔔", "Alarm"], ["camera", "📷", "CCTV camera"], ["door", "🚪", "Security door"]]],
+  ["Layout & licensing", [["corner", "⌐", "Corner unit"], ["storeroom", "📦", "Storeroom"], ["smoke", "💨", "Smoke outlet (needed for most food uses)"]]],
+];
+const EQUIP_COVERED = /air condition|heating|kitchen|handicaped|alarm|camera|security door|corner|storeroom|smoke|facade length|show windows|ground floor|located in the street|built in|layout|toilet|bathroom|\d+ floors?$/i;
+
 function listingFeaturesHtml(inv) {
-  const chips = [...(inv.features || []), ...(inv.media || [])];
-  if (!chips.length) return "";
+  const e = inv.equip || {};
+  const st = (v) => (v === true ? "yes" : v === false ? "no" : "unk");
+  const word = { yes: "Yes", no: "No", unk: "Not stated" };
+  const key = [
+    ["Facade", inv.facade_m ? `${inv.facade_m} m` : inv.facade_band || null],
+    ["Shop windows", inv.shop_windows ?? null],
+    ["Floor", inv.floor || inv.location_type || null],
+    ["Usable", inv.usable_m2 ? `${inv.usable_m2} m²` : null],
+  ];
+  const keyHtml = key.map(([k, v]) => `<div class="feq-key${v == null ? " is-unk" : ""}"><span>${k}</span><b>${v == null ? "?" : escapeHtml(String(v))}</b></div>`).join("");
+  const groups = EQUIP_GROUPS.map(([title, items]) => `<div class="feq-group"><h4>${title}</h4><ul>${items
+    .map(([k, ico, label]) => { const s2 = st(e[k]); return `<li class="feq feq--${s2}" title="${escapeHtml(label)}: ${word[s2]}"><span class="feq__ico" aria-hidden="true">${ico}</span><span class="feq__lbl">${escapeHtml(label)}</span><span class="feq__st">${s2 === "yes" ? "✓" : s2 === "no" ? "✗" : "?"}</span></li>`; })
+    .join("")}</ul></div>`).join("");
+  const other = [...(inv.features || []).filter((c) => !EQUIP_COVERED.test(c)), ...(inv.media || [])];
   return `<section class="card-section lfeat">
     <h3 class="card-section__title">Equipment &amp; features</h3>
-    <div class="chips">${chips.map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}</div>
+    <div class="feq-keys">${keyHtml}</div>
+    <div class="feq-groups">${groups}</div>
+    <p class="feq-legend"><span class="feq--yes">✓ listed</span><span class="feq--no">✗ listed as absent</span><span class="feq--unk">? not stated in the ad</span></p>
+    ${other.length ? `<div class="chips">${other.map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}</div>` : ""}
+  </section>`;
+}
+
+/** One description, Spanish first (then English), with a toggle to the other languages. */
+function listingDescToggleHtml(props) {
+  const inv = props.inv || {};
+  const langs = [["es", "Español", inv.desc_es], ["en", "English", inv.desc_en], ["ca", "Català", inv.desc_ca], ["orig", "Original ad", props.x?.desc]]
+    .filter(([, , t]) => t && String(t).trim());
+  const seen = new Set();
+  const uniq = langs.filter(([, , t]) => { const k = String(t).trim().slice(0, 120); if (seen.has(k)) return false; seen.add(k); return true; });
+  if (!uniq.length) return "";
+  const btns = uniq.length > 1 ? `<div class="ldesc2__langs" role="group" aria-label="Description language">${uniq.map(([k, l], i) => `<button type="button" data-lang="${k}" class="${i ? "" : "is-on"}">${l}</button>`).join("")}</div>` : "";
+  return `<section class="card-section ldesc2">
+    <div class="ldesc2__head"><h3 class="card-section__title">Description</h3>${btns}</div>
+    ${uniq.map(([k, , t], i) => `<div class="listing-desc listing-desc--full" data-text="${k}"${i ? " hidden" : ""}>${escapeHtml(String(t))}</div>`).join("")}
+    <p class="unit-note">Idealista auto-translates most ads; the advertiser wrote only one of these.</p>
   </section>`;
 }
 
@@ -299,21 +352,22 @@ function costDonutHtml(i) {
     ["Capex", i.capex, "var(--d4)"],
   ].filter((p) => p[1] > 0);
   const total = parts.reduce((s, p) => s + p[1], 0) || 1;
-  const r = 30;
-  const c = 2 * Math.PI * r;
+  const r = 30, c = 2 * Math.PI * r, gap = parts.length > 1 ? 1.2 : 0;
   let offset = 0;
+  const totalTxt = `${Math.round(total / 1000).toLocaleString("es-ES")}k €`;
   const arcs = parts
-    .map(([, v, col]) => {
-      const len = (v / total) * c;
-      const arc = `<circle cx="40" cy="40" r="${r}" fill="none" stroke="${col}" stroke-width="12" stroke-dasharray="${len.toFixed(2)} ${(c - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 40 40)"/>`;
-      offset += len;
+    .map(([k, v, col], n) => {
+      const len = Math.max(0.5, (v / total) * c - gap);
+      const pct = ((100 * v) / total).toFixed(1);
+      const arc = `<circle cx="40" cy="40" r="${r}" fill="none" stroke="${col}" class="donut__seg" data-seg="${n}" data-label="${escapeHtml(k)}" data-pct="${pct}" data-eur="${dealFmtEuro(v)}" style="--len:${len.toFixed(2)};--c:${c.toFixed(2)};animation-delay:${n * 90}ms" stroke-dasharray="${len.toFixed(2)} ${(c - len).toFixed(2)}" stroke-dashoffset="${(-offset).toFixed(2)}" transform="rotate(-90 40 40)"><title>${escapeHtml(k)}: ${dealFmtEuro(v)} (${pct}%)</title></circle>`;
+      offset += len + gap;
       return arc;
     })
     .join("");
   const legend = parts
-    .map(([k, v, col]) => `<li><i style="background:${col}"></i>${k}<b>${dealFmtEuro(v)}</b></li>`)
+    .map(([k, v, col], n) => `<li data-seg="${n}" data-label="${escapeHtml(k)}" data-pct="${((100 * v) / total).toFixed(1)}" data-eur="${dealFmtEuro(v)}"><i style="background:${col}"></i>${k}<b>${dealFmtEuro(v)}</b><em>${((100 * v) / total).toFixed(1)}%</em></li>`)
     .join("");
-  return `<div class="donut"><svg viewBox="0 0 80 80" width="120" height="120" aria-label="All-in cost breakdown">${arcs}<text x="40" y="38" text-anchor="middle" class="donut__k">All-in</text><text x="40" y="49" text-anchor="middle" class="donut__v">${Math.round(total / 1000).toLocaleString("es-ES")}k €</text></svg><ul class="donut__legend">${legend}</ul></div>`;
+  return `<div class="donut" data-total="${totalTxt}"><svg viewBox="0 0 80 80" width="140" height="140" aria-label="All-in cost breakdown"><circle cx="40" cy="40" r="${r}" fill="none" class="donut__track"/>${arcs}<text x="40" y="37" text-anchor="middle" class="donut__k">All-in</text><text x="40" y="48" text-anchor="middle" class="donut__v">${totalTxt}</text></svg><ul class="donut__legend">${legend}</ul></div>`;
 }
 
 /** Net yield as a function of rent €/m²/mo, with the current rent marked. */

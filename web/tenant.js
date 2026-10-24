@@ -120,7 +120,7 @@ function tenantChecksHtml(tenant, ev) {
     .map((c) => `<li>${icon(c.result)}<div><b>${escapeHtml(c.label)}</b>${c.verified ? "" : ` <span class="tc-unv">not verified</span>`}<span class="tc-val">${escapeHtml(c.shown)}</span><small>${escapeHtml(c.note)} · ${tenantSrcLink(c.src)}</small></div></li>`)
     .join("");
   const soft = tenant.soft
-    .map((s) => `<li><span>${escapeHtml(s.label)}${s.verified ? "" : ` <span class="tc-unv">not verified</span>`}</span><span class="nbars__track"><span style="width:${Math.round(100 * ev.parts[s.id])}%"></span></span><small>${Math.round(s.w * 100)}%</small></li>`)
+    .map((s) => `<li><span>${escapeHtml(s.label)}${s.verified ? "" : ` <span class="tc-unv">not verified</span>`}</span><span class="nbars__track"><span style="width:${Math.round(100 * ev.parts[s.id])}%;--v:${Math.round(100 * ev.parts[s.id])}"></span></span><small>${Math.round(s.w * 100)}%</small></li>`)
     .join("");
   const verdict = ev.fail ? `Fails ${ev.fail} hard criteria` : ev.unknown ? `No fails · ${ev.unknown} to check on site` : "Passes every hard criterion";
   return `<section class="card-section tenant-fit">

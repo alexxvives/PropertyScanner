@@ -1811,12 +1811,10 @@ body.has-modal {
 .nbars { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .nbars li { display: grid; grid-template-columns: 1fr 90px 26px; gap: 8px; align-items: center; font-size: 13px; }
 .nbars__track { height: 6px; background: var(--track); border-radius: 3px; overflow: hidden; }
-.nbars__track span { display: block; height: 100%; background: var(--ink); opacity: .75; }
+.nbars__track span { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, #9b2335 0%, #c2561a 22%, #e8a317 48%, #6fb34a 74%, #1f7a45 100%); background-size: calc(100% * 100 / max(var(--v, 100), 1)) 100%; }
 .nbars__val { text-align: right; font-variant-numeric: tabular-nums; color: var(--muted); }
 /* walk breakdown inside the listing modal: same neutral treatment */
 .modal-listing--v2 .visit-live .kicker { display: none; }
-.modal-listing--v2 .visit-live .score-bar__gradient--fill,
-.modal-listing--v2 .visit-live [class*="score-bar__fill"] { background: var(--ink) !important; opacity: .75; }
 .modal-listing--v2 .visit-live .part-detail, .modal-listing--v2 .visit-live .unit-note { font-size: 12px; }
 .facts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 14px; margin: 0; }
 .fact dt { font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
@@ -2042,3 +2040,16 @@ body.has-modal {
   .map-toolbar-anchor { top: 176px !important; }
 }
 @media (max-width: 640px) { .deal-charts { display: grid !important; grid-template-columns: 1fr !important; } .deal-charts figure { min-width: 0; } .ycurve { width: 100%; } }
+
+/* ---- round 7 ---- */
+.lhero { background: #15120f; isolation: isolate; }
+.lhero::before { content: ""; position: absolute; inset: -24px; z-index: 0; background: var(--hero-bg) center / cover no-repeat; filter: blur(22px) brightness(.7) saturate(1.1); }
+.lhero img, .modal-listing--v2 .lhero img { position: relative; z-index: 1; object-fit: contain !important; background: transparent !important; width: 100%; height: 100%; }
+.lhero .idealista-badge, .lhero__nav, .lhero [data-idx] { z-index: 2; }
+.lhero__strip .modal-thumb-btn { background: #15120f; }
+.lhero__strip img { object-fit: contain; }
+.donut__k { font: 600 5px Outfit, sans-serif; }
+.donut__v { font: 700 8.5px Outfit, sans-serif; }
+.donut__p { font: 5px Outfit, sans-serif; fill: var(--muted); }
+.ldesc2__src { margin: 0 0 6px; }
+.ldesc2__langs { flex-wrap: wrap; }

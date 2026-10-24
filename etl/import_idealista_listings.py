@@ -242,6 +242,9 @@ def listing_idealista_fields(item: dict) -> dict[str, str]:
                 continue
             lang = str(comment.get("language") or comment.get("defaultLanguage") or index).strip()
             out[f"comments.{lang}"] = stringify_idealista_value(comment.get("propertyComment"))
+            # provenance: advertiser default text, Idealista machine translation, or extra advertiser version
+            out[f"comments_kind.{lang}"] = ("auto" if comment.get("autoTranslated")
+                                            else "orig" if comment.get("defaultLanguage") else "adv")
 
     card_keys = (
         "savedAd",
@@ -756,6 +759,7 @@ def curate_listing(props: dict, detail: dict, first_seen: dict[str, str], today:
         "desc_en": raw.get("comments.en") or "",
         **_specs(detail, raw),
         "title_en": raw.get("suggestedTexts.title") or "",
+        "desc_kind": _desc_kinds(raw),
     }
     keep_zero = {"days_on_market"}
     return {k: v for k, v in inv.items() if k in keep_zero or v not in ("", None, [], {}, False, 0)}
@@ -766,6 +770,20 @@ def _orig_lang(comments) -> str:
         return str(json.loads(comments).get("defaultLanguage") or "") if isinstance(comments, str) else ""
     except ValueError:
         return ""
+
+
+def _desc_kinds(raw: dict) -> dict:
+    """es/en/ca -> orig | auto | adv | stub (Idealista's generated one-liner when no real text exists)."""
+    out = {}
+    for lang in ("es", "en", "ca"):
+        text = str(raw.get(f"comments.{lang}") or "")
+        kind = raw.get(f"comments_kind.{lang}") or ""
+        if not text:
+            continue
+        if kind == "adv" and len(text) < 220 and "\n" not in text.strip():
+            kind = "stub"
+        out[lang] = kind or "unknown"
+    return out
 
 
 def _specs(detail: dict, raw: dict) -> dict:
@@ -881,7 +899,7 @@ INVESTOR_FIELDS = [
     "admin_levels", "location_code", "listing_code", "state", "updated_ms", "activity",
     "highlighted", "new_dev_highlight", "auction", "transfer", "labels", "price_drop_pct",
     "price_drop_eur", "price_drop_date_ms", "energy", "features", "media", "photo_count",
-    "thumb", "photo_tags", "desc_ca", "title_en",
+    "thumb", "photo_tags", "desc_ca", "title_en", "desc_kind",
     "desc_es", "desc_en", "facade_m", "facade_band", "year_built", "usable_m2",
     "shop_windows", "floors_in_unit", "rooms", "bathrooms", "transfer_cost", "equip", "location_type",
     "last_activity", "building_type",

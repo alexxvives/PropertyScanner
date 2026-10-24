@@ -1420,6 +1420,7 @@ detailModalBody.addEventListener("click", (event) => {
   const src = button.dataset.image || button.querySelector("img")?.getAttribute("src");
   if (!hero || !src) return;
   hero.src = src;
+  hero.parentElement.style.setProperty("--hero-bg", `url("${src.replace(/"/g, "%22")}")`);
   detailModalBody.querySelectorAll(".modal-thumb-btn").forEach((node) => {
     node.classList.toggle("is-active", node === button);
   });
@@ -1578,7 +1579,7 @@ function listingHeroHtml(images, url) {
   const dots = images.length > 1
     ? `<div class="lhero__strip">${images.map((src, i) => `<button type="button" class="modal-thumb-btn${i === 0 ? " is-active" : ""}" data-image="${escapeHtml(src)}"><img src="${escapeHtml(src)}" alt="" loading="lazy" /></button>`).join("")}</div>`
     : "";
-  return `<div class="lhero modal-hero">${badge}<img class="hero-img" src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
+  return `<div class="lhero modal-hero" style="--hero-bg:url(&quot;${escapeHtml(images[0])}&quot;)">${badge}<img class="hero-img" src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
 }
 
 function listingModalContent(props) {
@@ -2763,9 +2764,9 @@ document.addEventListener("pointerover", (event) => {
   const idx = seg?.dataset.seg;
   donut.classList.toggle("is-hover", idx != null);
   donut.querySelectorAll("[data-seg]").forEach((el) => el.classList.toggle("is-on", el.dataset.seg === idx));
-  const k = donut.querySelector(".donut__k"), v = donut.querySelector(".donut__v");
-  if (idx != null) { k.textContent = `${seg.dataset.label} · ${seg.dataset.pct}%`; v.textContent = seg.dataset.eur; }
-  else { k.textContent = "All-in"; v.textContent = donut.dataset.total; }
+  const k = donut.querySelector(".donut__k"), v = donut.querySelector(".donut__v"), p = donut.querySelector(".donut__p");
+  if (idx != null) { k.textContent = seg.dataset.label; v.textContent = seg.dataset.eur; if (p) p.textContent = `${seg.dataset.pct}%`; }
+  else { k.textContent = "All-in"; v.textContent = donut.dataset.total; if (p) p.textContent = ""; }
 });
 
 // ---- Responsive: on phones the area ranking moves into the bottom sheet (tabs: Neighbourhoods / Listings).

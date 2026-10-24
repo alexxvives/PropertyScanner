@@ -18,6 +18,8 @@
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
   // Persistent cache for /api/nearby and /api/walk upstream responses.
   "kv_namespaces": [{ "binding": "API_CACHE", "id": "251d9a5054e447f69e780bcb546b7540" }],
+  // Private deal pipeline (names/contacts). Only reachable with a login session.
+  "d1_databases": [{ "binding": "DEALS_DB", "database_name": "property-scanner-deals", "database_id": "b79ccd5f-12e8-4a0f-8c11-cd38557186ee", "migrations_dir": "migrations" }],
   "ratelimits": [
     { "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
   ]

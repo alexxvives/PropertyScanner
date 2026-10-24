@@ -24,6 +24,8 @@ const PLACE_TYPES = {
   gym: ["gym"],
 };
 
+import { handleDeals } from "./deals-api.mjs";
+
 const SESSION_COOKIE = "ps_session";
 const SESSION_DAYS = 30;
 const WALK_TTL = 60 * 60 * 24 * 30; // isochrones barely change
@@ -65,14 +67,19 @@ async function validSession(request, env) {
   return safeEqual(sig, await hmac(sessionSecret(env), `session:${exp}`));
 }
 
-function loginPage(error = "", status = 200) {
+function safeNext(url) {
+  const next = new URL(url).searchParams.get("next");
+  return next === "/deals" ? "/deals" : "/";
+}
+
+function loginPage(error = "", status = 200, next = "/") {
   const html = `<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
 <title>Property Scanner · sign in</title><meta name="robots" content="noindex">
 <style>body{font-family:system-ui,sans-serif;display:grid;place-items:center;min-height:100vh;margin:0;background:#0f172a;color:#e2e8f0}
 form{display:flex;flex-direction:column;gap:12px;padding:28px;border-radius:12px;background:#1e293b;min-width:280px}
 input,button{font:inherit;padding:10px;border-radius:8px;border:1px solid #475569}button{background:#6d28d9;color:#fff;border:0;cursor:pointer}
 .err{color:#fca5a5;margin:0}</style></head><body>
-<form method="post" action="/login"><strong>Property Scanner</strong>
+<form method="post" action="/login${next === "/" ? "" : "?next=" + encodeURIComponent(next)}"><strong>Property Scanner</strong>
 ${error ? `<p class="err">${error}</p>` : ""}
 <input type="password" name="password" placeholder="Password" autocomplete="current-password" autofocus required>
 <button type="submit">Sign in</button></form></body></html>`;
@@ -80,16 +87,18 @@ ${error ? `<p class="err">${error}</p>` : ""}
 }
 
 async function handleLogin(request, env) {
-  if (request.method !== "POST") return loginPage();
-  if (!(await allowRequest(request, env, "login"))) return loginPage("Too many attempts. Wait a minute.", 429);
+  const next = safeNext(request.url);
+  if (!env.APP_PASSWORD) return new Response("Login is not configured.", { status: 503 });
+  if (request.method !== "POST") return loginPage("", 200, next);
+  if (!(await allowRequest(request, env, "login"))) return loginPage("Too many attempts. Wait a minute.", 429, next);
   const form = await request.formData().catch(() => null);
   const password = form?.get("password") || "";
-  if (!safeEqual(password, env.APP_PASSWORD)) return loginPage("Wrong password.", 401);
+  if (!safeEqual(password, env.APP_PASSWORD)) return loginPage("Wrong password.", 401, next);
   const secure = new URL(request.url).protocol === "https:" ? "; Secure" : "";
   return new Response(null, {
     status: 303,
     headers: {
-      Location: "/",
+      Location: next,
       "Set-Cookie": `${SESSION_COOKIE}=${await makeSession(env)}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_DAYS * 86400}${secure}`,
     },
   });
@@ -158,7 +167,7 @@ function sameOrigin(request) {
   const site = request.headers.get("Sec-Fetch-Site");
   if (site && site !== "same-origin" && site !== "none") return false;
   // POSTs from a browser always carry Origin; require it so curl/other sites can't post blind.
-  if (request.method === "POST" && !origin) return false;
+  if (request.method !== "GET" && request.method !== "HEAD" && !origin) return false;
   return true;
 }
 
@@ -295,37 +304,55 @@ async function handleNearby(request, env, ctx) {
   return json(result, 200, "MISS");
 }
 
+const PRIVATE_PAGES = new Set(["/deals", "/deals/", "/deals.html", "/deals.js", "/deals.css"]);
+const isPrivate = (path) => PRIVATE_PAGES.has(path) || path === "/api/deals" || path.startsWith("/api/deals/");
+
+const SECURITY_HEADERS = {
+  "X-Content-Type-Options": "nosniff",
+  "Referrer-Policy": "same-origin",
+  "X-Frame-Options": "DENY",
+};
+const PRIVATE_CSP =
+  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
+
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    // Public by default; login is opt-in via the REQUIRE_LOGIN var ("true").
-    const authOff = env.REQUIRE_LOGIN !== "true" || env.AUTH_DISABLED === "1";
+    // Login/logout always exist so the private Deals pipeline can be unlocked even when the map is public.
+    if (url.pathname === "/login") return handleLogin(request, env);
+    if (url.pathname === "/logout") return logout();
+    const privatePath = isPrivate(url.pathname);
+    // Public by default; login is opt-in via the REQUIRE_LOGIN var ("true"). Deals ALWAYS need a session.
+    const authOff = (env.REQUIRE_LOGIN !== "true" || env.AUTH_DISABLED === "1") && !privatePath;
     if (!authOff) {
       if (!env.APP_PASSWORD) {
-        return new Response("Property Scanner is private. Set the APP_PASSWORD secret (wrangler secret put APP_PASSWORD).", {
+        return new Response("This area is private. Set the APP_PASSWORD secret (wrangler secret put APP_PASSWORD).", {
           status: 503,
           headers: { "Content-Type": "text/plain; charset=utf-8" },
         });
       }
-      if (url.pathname === "/login") return handleLogin(request, env);
-      if (url.pathname === "/logout") return logout();
       if (!(await validSession(request, env))) {
         if (url.pathname.startsWith("/api/")) return json({ error: "Sign in required" }, 401);
-        if (url.pathname.startsWith("/data/")) return new Response("Sign in required", { status: 401 });
-        return Response.redirect(new URL("/login", url).toString(), 302);
+        if (url.pathname.startsWith("/data/") || /\.(js|css)$/.test(url.pathname)) return new Response("Sign in required", { status: 401 });
+        const next = privatePath ? "?next=/deals" : "";
+        return Response.redirect(new URL(`/login${next}`, url).toString(), 302);
       }
     }
     if (url.pathname.startsWith("/api/")) {
       if (!sameOrigin(request)) return json({ error: "Cross-origin request blocked" }, 403);
-      if (!(await allowRequest(request, env, "api"))) return json({ error: "Too many requests, slow down" }, 429);
+      if (!(await allowRequest(request, env, privatePath ? "deals" : "api"))) return json({ error: "Too many requests, slow down" }, 429);
+      if (privatePath) return handleDeals(request, env, url);
       if (url.pathname === "/api/walk" && request.method === "POST") return handleWalk(request, env, ctx);
       if (url.pathname === "/api/nearby" && request.method === "GET") return handleNearby(request, env, ctx);
       return json({ error: "Not found" }, 404);
     }
-    const response = await env.ASSETS.fetch(request);
+    const assetReq = url.pathname === "/deals/" ? new Request(new URL("/deals", url), request) : request;
+    const response = await env.ASSETS.fetch(assetReq);
     const headers = new Headers(response.headers);
     headers.set("X-Robots-Tag", "noindex");
     headers.set("Cache-Control", "private, no-store");
+    for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
+    if (privatePath) headers.set("Content-Security-Policy", PRIVATE_CSP);
     return new Response(response.body, { status: response.status, headers });
   },
 };

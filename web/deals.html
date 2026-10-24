@@ -1,0 +1,46 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="robots" content="noindex" />
+    <title>Deals · Property Scanner</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,560;9..144,650&family=Outfit:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="deals.css" />
+  </head>
+  <body>
+    <header class="dtop">
+      <div class="dtop__title">
+        <a class="dtop__back" href="/">← Map</a>
+        <h1>Deals</h1>
+        <span class="dtop__private" title="Only visible after you sign in. Stored privately on the server.">Private</span>
+      </div>
+      <div class="dtop__actions">
+        <div class="seg" role="tablist" aria-label="View">
+          <button type="button" class="is-on" data-view="board" aria-selected="true">Board</button>
+          <button type="button" data-view="table" aria-selected="false">Table</button>
+        </div>
+        <button type="button" class="btn btn--primary" id="new-deal">New deal</button>
+        <a class="btn btn--ghost" href="/logout">Sign out</a>
+      </div>
+    </header>
+    <section class="dsum" id="summary" aria-live="polite"></section>
+    <main id="deals-root" class="droot"><p class="dmuted">Loading…</p></main>
+
+    <div class="drawer" id="drawer" hidden>
+      <div class="drawer__scrim" data-close></div>
+      <aside class="drawer__panel" role="dialog" aria-modal="true" aria-labelledby="drawer-title">
+        <header class="drawer__head">
+          <h2 id="drawer-title">Deal</h2>
+          <button type="button" class="iconbtn" data-close aria-label="Close">×</button>
+        </header>
+        <form id="deal-form" class="dform" novalidate></form>
+      </aside>
+    </div>
+    <div class="toast" id="toast" role="status" hidden></div>
+    <script src="tenant.js"></script>
+    <script src="deals.js"></script>
+  </body>
+</html>

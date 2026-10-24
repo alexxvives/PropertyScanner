@@ -1776,6 +1776,7 @@ function listingModalContent(props) {
         <h2>${escapeHtml(listingShortTitle(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
+      <button type="button" class="add-deal" data-add-deal="${escapeHtml(props.id)}" title="Start a private deal from this listing (sign-in required)">+ Add to deals</button>
     </header>
     <div class="ltop">
       ${listingHeroHtml(images, props.u)}
@@ -3072,3 +3073,33 @@ document.addEventListener("pointerover", (event) => {
   phone.addEventListener("change", apply);
   apply();
 })();
+
+
+/* ---- Deals: one-click "Add to deals" from a listing card (prefilled from the Calculator) ---- */
+document.addEventListener("click", async (event) => {
+  const btn = event.target.closest("[data-add-deal]");
+  if (!btn) return;
+  const id = btn.dataset.addDeal;
+  const props = state.listingById.get(id)?.properties || state.listings?.find?.((f) => f.properties.id === id)?.properties;
+  if (!props) return;
+  const coords = state.listingById.get(id)?.geometry?.coordinates;
+  const sec = document.querySelector("#sec-deal .deal-calc");
+  let i = props.op === "rent" ? null : dealInputs(props, coords, state.listings);
+  if (i && sec) i = { ...i, ...readDealInputs(sec) };
+  const m = i ? dealMath(i) : null;
+  const round = (n, d = 0) => (Number.isFinite(n) ? Number(n.toFixed(d)) : null);
+  const deal = {
+    title: listingShortTitle(props).slice(0, 160),
+    stage: "sourced",
+    listingId: String(props.id).slice(0, 64),
+    listingUrl: /^https:\/\//.test(props.u || "") ? props.u : "",
+    address: (listingPlaceLine(props) || "").slice(0, 200),
+    price: props.op === "rent" ? null : round(props.p),
+    rent: props.op === "rent" ? round(props.p) : m ? round(m.grossRent / 12) : null,
+    yieldPct: m ? round(m.netYield, 2) : null,
+    tenantId: state.tenant?.id || "",
+  };
+  sessionStorage.setItem("ps-pending-deal", JSON.stringify(deal));
+  btn.textContent = "Opening Deals…";
+  window.location.href = "/deals";
+});

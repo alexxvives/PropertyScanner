@@ -108,8 +108,16 @@ function clientIp(request) {
 
 async function allowRequest(request, env, scope) {
   const key = `${scope}:${clientIp(request)}`;
-  // The platform binding is eventually consistent per location and can be lenient
-  // under bursts, so the per-isolate limiter below always applies as well.
+  // Exact per-IP fixed window: one Durable Object per key serialises every hit.
+  if (env.RATE_LIMITER) {
+    try {
+      const stub = env.RATE_LIMITER.get(env.RATE_LIMITER.idFromName(key));
+      const res = await stub.fetch("https://limiter/hit", { method: "POST" });
+      return res.status !== 429;
+    } catch {
+      // fall through to the best-effort limiters if the DO is unavailable
+    }
+  }
   if (env.API_LIMITER?.limit) {
     const { success } = await env.API_LIMITER.limit({ key });
     if (!success) return false;
@@ -120,6 +128,27 @@ async function allowRequest(request, env, scope) {
   memoryHits.set(key, hits);
   if (memoryHits.size > 5000) memoryHits.clear();
   return hits.length <= FALLBACK_LIMIT.limit;
+}
+
+/** Fixed-window counter (RATE_LIMIT per RATE_WINDOW_MS) for a single client key. */
+const RATE_LIMIT = 30;
+const RATE_WINDOW_MS = 60_000;
+export class RateLimiter {
+  constructor(state) {
+    this.state = state;
+  }
+  async fetch() {
+    const window = Math.floor(Date.now() / RATE_WINDOW_MS);
+    const saved = (await this.state.storage.get("w")) || { window, count: 0 };
+    const current = saved.window === window ? saved : { window, count: 0 };
+    current.count += 1;
+    await this.state.storage.put("w", current);
+    const ok = current.count <= RATE_LIMIT;
+    return new Response(ok ? "ok" : "limited", {
+      status: ok ? 200 : 429,
+      headers: { "X-Remaining": String(Math.max(0, RATE_LIMIT - current.count)) },
+    });
+  }
 }
 
 function sameOrigin(request) {
@@ -150,11 +179,10 @@ async function cachePut(env, ctx, key, value, ttl) {
   else await write.catch(() => {});
 }
 
-function json(data, status = 200) {
-  return new Response(JSON.stringify(data), {
-    status,
-    headers: { "Content-Type": "application/json", "Cache-Control": "no-store" },
-  });
+function json(data, status = 200, cacheState = "") {
+  const headers = { "Content-Type": "application/json", "Cache-Control": "no-store" };
+  if (cacheState) headers["X-PS-Cache"] = cacheState;
+  return new Response(JSON.stringify(data), { status, headers });
 }
 
 async function proxyToPython(request, url) {
@@ -190,7 +218,7 @@ async function handleWalk(request, env, ctx) {
     const minutes = Math.max(5, Math.min(15, Number(body.minutes) || 10));
     const cacheKey = `walk:${lon.toFixed(4)}:${lat.toFixed(4)}:${minutes}`;
     const cached = await cacheGet(env, cacheKey);
-    if (cached) return json(cached);
+    if (cached) return json(cached, 200, "HIT");
     const response = await fetch("https://api.openrouteservice.org/v2/isochrones/foot-walking", {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: orsKey },
@@ -203,7 +231,7 @@ async function handleWalk(request, env, ctx) {
     const payload = await response.json();
     if (!response.ok) return json({ error: payload?.error || `OpenRouteService returned ${response.status}` }, 502);
     await cachePut(env, ctx, cacheKey, payload, WALK_TTL);
-    return json(payload);
+    return json(payload, 200, "MISS");
   } catch {
     return json({ error: "Need a longitude and a latitude" }, 400);
   }
@@ -224,7 +252,7 @@ async function handleNearby(request, env, ctx) {
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return json({ error: "Need a longitude and a latitude" }, 400);
   const cacheKey = `nearby:${lon.toFixed(4)}:${lat.toFixed(4)}:${kind}`;
   const cached = await cacheGet(env, cacheKey);
-  if (cached) return json(cached);
+  if (cached) return json(cached, 200, "HIT");
   const types = PLACE_TYPES[kind];
   const response = await fetch("https://places.googleapis.com/v1/places:searchNearby", {
     method: "POST",
@@ -254,7 +282,7 @@ async function handleNearby(request, env, ctx) {
     names,
   };
   await cachePut(env, ctx, cacheKey, result, NEARBY_TTL);
-  return json(result);
+  return json(result, 200, "MISS");
 }
 
 export default {

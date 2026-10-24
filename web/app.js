@@ -183,6 +183,13 @@ const HEATMAPS = {
 };
 
 const SPAIN_BOUNDS = [[-9.6, 35.7], [4.6, 43.9]];
+const JUMPS = {
+  madrid: [[-3.84, 40.33], [-3.58, 40.51]],
+  barcelona: [[2.07, 41.32], [2.23, 41.47]],
+  spain: SPAIN_BOUNDS,
+};
+/** Default view: central Madrid, where most leads are. */
+const DEFAULT_VIEW = JUMPS.madrid;
 
 /** Prefixed ids so OpenFreeMap basemap layers never collide (e.g. some styles ship an `areas-fill`). */
 const MAP_LAYERS = {
@@ -260,8 +267,24 @@ const mapHeatmapToolbar = document.querySelector("#map-heatmap-toolbar");
 const MAP_STYLES = {
   light: { label: "Light", url: "https://tiles.openfreemap.org/styles/positron", swatch: "#ebe6dc" },
   streets: { label: "Streets", url: "https://tiles.openfreemap.org/styles/bright", swatch: "#d4e2ed" },
-  liberty: { label: "Liberty", url: "https://tiles.openfreemap.org/styles/liberty", swatch: "#c8dcc4" },
-  dark: { label: "Dark", url: "https://tiles.openfreemap.org/styles/dark", swatch: "#3a3a40" },
+  satellite: {
+    label: "Satellite",
+    swatch: "#4a5a3a",
+    url: {
+      version: 8,
+      glyphs: "https://tiles.openfreemap.org/fonts/{fontstack}/{range}.pbf",
+      sources: {
+        esri: {
+          type: "raster",
+          tiles: ["https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}"],
+          tileSize: 256,
+          maxzoom: 19,
+          attribution: "Imagery © Esri, Maxar, Earthstar Geographics, and the GIS User Community",
+        },
+      },
+      layers: [{ id: "esri-imagery", type: "raster", source: "esri" }],
+    },
+  },
 };
 
 /** Match neighborhood score breakdown dimensions (see scoreAreas). */
@@ -682,7 +705,7 @@ function colorStops(field) {
 
 function paintAreaFillOpacity() {
   if (!map?.getLayer?.(MAP_LAYERS.areasFill)) return;
-  const dark = state.mapStyle === "dark";
+  const dark = state.mapStyle === "satellite";
   const opacity = dark
     ? ["interpolate", ["linear"], ["zoom"], 6, 0.32, 9, 0.82, 12, 0.78, 13, 0.48, 14, 0.24, 16, 0.14]
     : ["interpolate", ["linear"], ["zoom"], 6, 0.2, 9, 0.78, 12, 0.74, 13, 0.42, 14, 0.18, 16, 0.08];
@@ -710,14 +733,25 @@ function paintScores() {
   }
 }
 
+/** Areas whose bounding box overlaps the current map view (ranking only; scores are city-wide). */
+function areasInView() {
+  const all = visibleAreas();
+  if (!map?.getBounds) return all;
+  const b = map.getBounds();
+  return all.filter((feature) => {
+    const [[x1, y1], [x2, y2]] = boundsOf(feature.geometry);
+    return x2 >= b.getWest() && x1 <= b.getEast() && y2 >= b.getSouth() && y1 <= b.getNorth();
+  });
+}
+
 function renderAreaRanking() {
   if (!areaRanking || !areaRankingTitle) return;
-  const rows = visibleAreas()
+  const rows = areasInView()
     .slice()
     .sort((a, b) => b.properties.score - a.properties.score);
   areaRankingTitle.textContent = rankingConceptTitle("neighborhood");
   if (!rows.length) {
-    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? "No areas match this city filter." : "Loading neighborhoods…"}</p></li>`;
+    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? "No neighbourhoods in view — zoom out or jump to Madrid / Barcelona." : "Loading neighborhoods…"}</p></li>`;
     return;
   }
   areaRanking.innerHTML = rows
@@ -736,7 +770,7 @@ function renderAreaRanking() {
 
 function rankableListings() {
   if (!state.listings.length) return [];
-  return collectRankableListings({ restrictToBounds: false });
+  return collectRankableListings({ restrictToBounds: true });
 }
 
 function rankableAreas() {
@@ -1289,7 +1323,7 @@ detailModalBody.addEventListener("click", (event) => {
   }
   const button = event.target.closest(".modal-thumb-btn");
   if (!button) return;
-  const hero = detailModalBody.querySelector(".modal-hero img");
+  const hero = detailModalBody.querySelector(".modal-hero > img");
   const src = button.dataset.image || button.querySelector("img")?.getAttribute("src");
   if (!hero || !src) return;
   hero.src = src;
@@ -1333,20 +1367,100 @@ function listingMediaHtml(images, url, topBarHtml = "") {
   return `<div class="modal-media">${topBarHtml}<div class="modal-hero modal-hero--placeholder" aria-hidden="true">${badge}${iconSvg("building", "modal-hero__icon")}</div></div>`;
 }
 
+/** Percentile (0–100) of `value` among same-city areas for a metric getter. Display only; scoring is untouched. */
+function cityPercentile(areaProps, getter) {
+  const value = getter(areaProps);
+  if (!Number.isFinite(value)) return null;
+  const pool = (state.areas?.features || [])
+    .map((f) => f.properties)
+    .filter((p) => p.city === areaProps.city)
+    .map(getter)
+    .filter(Number.isFinite)
+    .sort((a, b) => a - b);
+  return Math.round(rankValue(pool, value) * 100);
+}
+
+const WHY_GROUPS = [
+  {
+    title: "Demand",
+    rows: [
+      { part: () => scorePartLabel("foot"), name: "Footfall (open premises)", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("popDensity"), name: "Residents", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("income"), name: "Disposable income", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
+      { part: () => "Older residents", name: "Aged 65+", get: (p) => p.pct_65, fmt: (v) => `${v}%` },
+    ],
+  },
+  {
+    title: "Competition",
+    rows: [
+      { part: () => scorePartLabel("competitors"), name: "Same-type businesses", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
+      { part: () => scorePartLabel("pals"), name: "Complementary shops", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
+    ],
+  },
+  {
+    title: "Access",
+    rows: [
+      { part: () => scorePartLabel("metro"), name: "Public transit", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
+      { part: () => null, name: "Road traffic", get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
+    ],
+  },
+  {
+    title: "Supply",
+    rows: [
+      { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
+      { part: () => scorePartLabel("room"), name: "Empty / closed doors", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
+    ],
+  },
+];
+
+function whyRowHtml(row, areaProps) {
+  const value = row.get(areaProps);
+  if (!Number.isFinite(value)) return "";
+  const label = row.part();
+  const part = label ? (areaProps.parts || []).find((p) => p.label === label) : null;
+  const pct = cityPercentile(areaProps, row.get);
+  const line = part?.line || (row.line ? row.line(pct) : "Context only — not weighted for this concept");
+  const tag = part ? `<span class="why-tag">fit ${part.score}</span>` : `<span class="why-tag why-tag--muted">context</span>`;
+  return `<li class="why-row">
+    <div class="why-row__top"><span class="why-row__name">${escapeHtml(row.name)}</span>${tag}</div>
+    <div class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</div>
+    <div class="why-row__pct" title="Percentile vs ${escapeHtml(areaProps.city)} neighbourhoods"><span class="nbars__track"><span style="width:${pct ?? 0}%"></span></span><em>P${pct ?? "–"} in ${escapeHtml(areaProps.city)}</em></div>
+    <p class="why-row__line">${escapeHtml(line)}</p>
+  </li>`;
+}
+
+function whyScoreHtml(areaProps) {
+  const parts = (areaProps.parts || []).slice();
+  const byValue = parts.slice().sort((a, b) => b.value - a.value);
+  const strengths = byValue.filter((p) => p.value >= 0.5).slice(0, 3);
+  const weaknesses = byValue.slice().reverse().filter((p) => p.value < 0.5).slice(0, 3);
+  const li = (p) => `<li><b>${escapeHtml(p.label)}</b><span>${escapeHtml(p.line)}</span></li>`;
+  const groups = WHY_GROUPS.map((g) => {
+    const rows = g.rows.map((r) => whyRowHtml(r, areaProps)).join("");
+    return rows ? `<div class="why-group"><h4>${g.title}</h4><ul>${rows}</ul></div>` : "";
+  }).join("");
+  return `<div class="why-summary">
+      <div class="why-col why-col--good"><h4>Top strengths</h4><ul>${strengths.map(li).join("") || "<li><span>No standout strengths for this concept.</span></li>"}</ul></div>
+      <div class="why-col why-col--bad"><h4>Top weaknesses</h4><ul>${weaknesses.map(li).join("") || "<li><span>No clear weak spots.</span></li>"}</ul></div>
+    </div>
+    <div class="why-groups">${groups}</div>`;
+}
+
 function listingFitHtml(areaProps, concept) {
   if (!areaProps) {
-    return `<section class="card-section lfit"><p class="live-note">No barrio score for this pin yet.</p><div class="visit-live fit-subsection--walk" hidden></div></section>`;
+    return `<section class="card-section lwhy"><p class="live-note">No barrio score for this pin yet.</p><div class="visit-live fit-subsection--walk" hidden></div></section>`;
   }
-  return `<section class="card-section lfit">
-    <div class="lfit__head">
+  return `<section class="card-section lwhy">
+    <div class="lwhy__head">
       <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${fitRingHtml(areaProps.score, `for ${concept} · area only until the walk loads`)}</div>
-      <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
+      <div>
+        <h3 class="lwhy__title">Why this score</h3>
+        <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
+        <p class="lwhy__sub">Neighbourhood <b data-sub="area">${Math.round(areaProps.score)}</b> · 10-minute walk <b data-sub="walk">…</b> · ${escapeHtml(areaProps.name)}, ${escapeHtml(areaProps.city)}</p>
+      </div>
     </div>
-    <details class="lfit__why">
-      <summary>Why this score</summary>
-      <h4>Neighbourhood <span data-sub="area">${Math.round(areaProps.score)}</span></h4>
-      ${neutralBarsHtml(areaProps.parts)}
-      <h4>10-minute walk <span data-sub="walk">…</span></h4>
+    ${whyScoreHtml(areaProps)}
+    <details class="lwhy__walk" open><summary>Around this door (10-minute walk)</summary>
       <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
     </details>
   </section>`;
@@ -1363,7 +1477,7 @@ function listingHeroHtml(images, url) {
   const dots = images.length > 1
     ? `<div class="lhero__strip">${images.map((src, i) => `<button type="button" class="modal-thumb-btn${i === 0 ? " is-active" : ""}" data-image="${escapeHtml(src)}"><img src="${escapeHtml(src)}" alt="" loading="lazy" /></button>`).join("")}</div>`
     : "";
-  return `<div class="lhero modal-hero">${badge}<img src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
+  return `<div class="lhero modal-hero">${badge}<img class="hero-img" src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
 }
 
 function listingModalContent(props) {
@@ -1402,10 +1516,8 @@ function listingModalContent(props) {
     </header>
     ${kpis}
     ${partialNote}
-    <div class="lgrid">
-      ${listingFitHtml(areaProps, concept)}
-      ${investorFieldsHtml(props)}
-    </div>
+    ${listingFitHtml(areaProps, concept)}
+    ${investorFieldsHtml(props)}
     ${dealCalculatorHtml(props, coords, state.listings)}
     ${desc}
     ${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}
@@ -2241,7 +2353,7 @@ function tallyListings() {
 }
 
 function readInputs(fly) {
-  const city = pickerValue("city");
+  const city = "all"; // scoring is city-wide; rankings follow the map viewport
   state.query = parseQuery(pickerValue("business"));
   const nextCity = city === "Madrid" || city === "Barcelona" ? city : "all";
   const shouldFly = fly && nextCity !== state.city;
@@ -2298,7 +2410,7 @@ async function onMapReady() {
   ensureMapLayers();
   mountMapToolbar();
   paintScores();
-  map.fitBounds(SPAIN_BOUNDS, { padding: mapPadding(), duration: 0 });
+  map.fitBounds(DEFAULT_VIEW, { padding: mapPadding(), duration: 0 });
   await bootstrapAppData();
 }
 
@@ -2451,8 +2563,8 @@ map.on("click", (event) => {
   if (!mapOverlayReady) return;
   const cityHit = queryMapLayerFeatures(event.point, [MAP_LAYERS.cities])[0];
   if (cityHit) {
-    setPicker("city", cityHit.properties.city);
-    readInputs(true);
+    const jump = JUMPS[String(cityHit.properties.city || "").toLowerCase()];
+    if (jump) map.fitBounds(jump, { padding: mapPadding(), duration: 700 });
     return;
   }
   const listing = listingNearCursor(event.point);
@@ -2475,7 +2587,15 @@ map.on("click", (event) => {
 map.on("moveend", () => {
   syncPins();
   syncListings();
+  renderAreaRanking();
   renderListingRanking();
+});
+
+document.querySelector("#jump-row")?.addEventListener("click", (event) => {
+  const button = event.target.closest("[data-jump]");
+  if (!button) return;
+  const target = JUMPS[button.dataset.jump];
+  if (target) map.fitBounds(target, { padding: mapPadding(), duration: 700 });
 });
 
 map.on("error", (event) => {

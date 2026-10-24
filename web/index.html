@@ -49,16 +49,12 @@
         </div>
       </div>
 
-      <div class="picker" data-picker="city">
-        <span class="field-label" id="city-label">City</span>
-        <button type="button" class="picker-button" aria-labelledby="city-label city-value" aria-haspopup="listbox" aria-expanded="false" aria-controls="city-menu">
-          <span class="picker-value" id="city-value">Spain</span>
-          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
-        </button>
-        <div class="picker-menu" id="city-menu" role="listbox" hidden>
-          <button type="button" role="option" data-value="all" aria-selected="true">Spain</button>
-          <button type="button" role="option" data-value="Madrid" aria-selected="false">Madrid</button>
-          <button type="button" role="option" data-value="Barcelona" aria-selected="false">Barcelona</button>
+      <div class="jump-row" id="jump-row">
+        <span class="field-label">Explore the map · rankings follow the view</span>
+        <div class="jump-row__btns">
+          <button type="button" data-jump="madrid">Madrid</button>
+          <button type="button" data-jump="barcelona">Barcelona</button>
+          <button type="button" data-jump="spain">All Spain</button>
         </div>
       </div>
 

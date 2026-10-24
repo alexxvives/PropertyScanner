@@ -13,11 +13,16 @@
   },
   // Per-IP rate limit for /api/* and /login (30 requests / 60 s per IP).
   "vars": { "REQUIRE_LOGIN": "false" },
+  // Exact per-IP fixed window (30 req / 60 s) for /api/* and /login; API_LIMITER is the fallback.
+  "durable_objects": { "bindings": [{ "name": "RATE_LIMITER", "class_name": "RateLimiter" }] },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["RateLimiter"] }],
+  // Persistent cache for /api/nearby and /api/walk upstream responses.
+  "kv_namespaces": [{ "binding": "API_CACHE", "id": "251d9a5054e447f69e780bcb546b7540" }],
   "ratelimits": [
     { "name": "API_LIMITER", "namespace_id": "1001", "simple": { "limit": 30, "period": 60 } }
   ]
   // Secrets (set with `wrangler secret put <NAME>`, never commit them):
-  //   APP_PASSWORD              shared login password (required; app refuses to serve without it)
+  //   APP_PASSWORD (only when REQUIRE_LOGIN=true); app refuses to serve without it)
   //   SESSION_SECRET            random string used to sign session cookies (recommended)
   //   GOOGLE_MAPS_API_KEY       Google Places (New) key for /api/nearby
   //   OPENROUTESERVICE_API_KEY  OpenRouteService key for /api/walk

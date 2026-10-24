@@ -1838,3 +1838,37 @@ body.has-modal {
 .donut__legend b { font-weight: 600; }
 .modal-listing--v2 .lhero.modal-hero { width: 100%; max-width: none; max-height: 380px; height: auto; margin: 0; }
 .modal-listing--v2 .lhero img { max-height: 380px; }
+
+/* ===== Round 2 ===== */
+.lhero .idealista-badge { top: 10px; left: 10px; right: auto; }
+.lwhy { padding: 16px; }
+.lwhy__head { display: grid; grid-template-columns: auto 1fr; gap: 16px; align-items: center; padding-bottom: 12px; border-bottom: 1px solid var(--line); }
+.lwhy__title { margin: 0; font-size: 1.1rem; }
+.lwhy__sub { margin: 4px 0 0; font-size: 12px; color: var(--muted); }
+.why-summary { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin: 14px 0; }
+.why-col { border-radius: 10px; padding: 10px 12px; background: var(--paper); }
+.why-col h4, .why-group h4 { margin: 0 0 6px; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); }
+.why-col--good h4::before { content: "▲ "; color: var(--copper); }
+.why-col--bad h4::before { content: "▼ "; color: var(--muted); }
+.why-col ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.why-col li { display: grid; font-size: 13px; } .why-col li b { font-weight: 600; } .why-col li span { color: var(--muted); font-size: 12px; }
+.why-groups { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+.why-group ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.why-row { display: grid; gap: 2px; }
+.why-row__top { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
+.why-row__name { font-weight: 600; font-size: 13px; }
+.why-tag { font-size: 11px; font-weight: 600; color: var(--copper); border: 1px solid var(--copper); border-radius: 999px; padding: 0 6px; }
+.why-tag--muted { color: var(--muted); border-color: var(--line); font-weight: 400; }
+.why-row__val { font-size: 13px; color: var(--ink); font-variant-numeric: tabular-nums; }
+.why-row__pct { display: grid; grid-template-columns: 1fr auto; gap: 8px; align-items: center; }
+.why-row__pct em { font-style: normal; font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.why-row__line { margin: 0; font-size: 12px; color: var(--muted); }
+.lwhy__walk { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 10px; }
+.lwhy__walk summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+@media (max-width: 720px) { .why-summary, .why-groups { grid-template-columns: 1fr; } }
+.jump-row { display: grid; gap: 6px; }
+.jump-row__btns { display: flex; gap: 6px; }
+.jump-row__btns button { flex: 1; border: 1px solid var(--line); background: var(--panel, #fff); border-radius: 999px; padding: 6px 10px; font: inherit; font-size: 13px; cursor: pointer; color: var(--ink); }
+.jump-row__btns button:hover { border-color: var(--copper); color: var(--copper); }
+/* neutral single-hue bars in the rankings too */
+#area-ranking .score-bar__gradient--fill, #listing-ranking .score-bar__gradient--fill { background: var(--ink) !important; opacity: .7; }

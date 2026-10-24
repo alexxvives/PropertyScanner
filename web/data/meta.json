@@ -45,8 +45,17 @@
     "barcelona": 0
   },
   "idealistaListings": {
-    "madrid": 51,
-    "operation": "sale",
+    "total": 500,
+    "counts": {
+      "barcelona_rent": 100,
+      "barcelona_sale": 100,
+      "madrid_rent": 150,
+      "madrid_sale": 150
+    },
+    "operation": [
+      "sale",
+      "rent"
+    ],
     "detailFields": [
       "ac",
       "agency",
@@ -60,6 +69,7 @@
       "dropDate",
       "floor",
       "has360",
+      "has3d",
       "hasPlan",
       "hasVideo",
       "highlight",
@@ -81,10 +91,13 @@
       "stats",
       "status",
       "thumb",
+      "topHighlight",
+      "transfer",
       "typology",
       "ubic",
       "ubicKey",
-      "userType"
+      "userType",
+      "visualHighlight"
     ],
     "note": "Purple pins on the map. Sample from Apify; expand with etl/import_idealista_listings.py after each scrape."
   }

@@ -661,7 +661,8 @@ h1 {
   flex: 0 1 auto;
 }
 
-.ranking .row-price-meta .row-tag--sale {
+.ranking .row-price-meta .row-tag--sale,
+.ranking .row-price-meta .row-tag--rent {
   position: relative;
   top: -1px;
 }
@@ -670,7 +671,8 @@ h1 {
   margin: 0;
 }
 
-.row-tag--sale {
+.row-tag--sale,
+.row-tag--rent {
   padding: 3px 8px;
   border-radius: 99px;
   background: #ede9fe;
@@ -1236,6 +1238,7 @@ h1 {
 .status-pill--empty { background: #eee9e2; }
 .status-pill--closed { background: #f3e8e8; }
 .status-pill--sale { background: #ede9fe; color: #4c1d95; }
+.status-pill--rent { background: #fef3c7; color: #854d0e; }
 
 .tag-row {
   display: flex;
@@ -1953,3 +1956,5 @@ body.has-modal {
 @media (max-width: 1024px) {
   .map-toolbar--filters .map-style-btn, .map-toolbar--filters button { white-space: nowrap; font-size: 12px; padding: 4px 10px; }
 }
+
+.row-tag--rent { background: #fef3c7; color: #854d0e; }

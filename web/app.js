@@ -814,7 +814,7 @@ function renderListingRanking() {
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
-        <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}<span class="row-tag row-tag--sale">For sale</span></span>
+        <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}</span>
         <span class="score-bar-wrap">${scoreBarHtml(item.score, "Overall fit")}</span>
       </button></li>`;
         })
@@ -927,8 +927,13 @@ function formatEuro(value) {
   return `€${formatNumber(amount)}`;
 }
 
+function opTagHtml(props, cls) {
+  const rent = props?.op === "rent";
+  return `<span class="${cls} ${cls}--${rent ? "rent" : "sale"}">${rent ? "For rent" : "For sale"}</span>`;
+}
+
 function listingPriceHtml(props, { variant = "hero", showPm2 = true, inlineSize = false } = {}) {
-  const amount = formatEuro(props.p);
+  const amount = props.p ? `${formatEuro(props.p)}${props.op === "rent" ? "/mo" : ""}` : formatEuro(props.p);
   const size = props.sz ? `${formatNumber(props.sz)} m²` : "";
   const pm2 = showPm2 && props.pm2 ? `${formatEuro(props.pm2)}/m²` : "";
   if (!amount && !size) return "";
@@ -1510,7 +1515,7 @@ function listingModalContent(props) {
     ${listingHeroHtml(images, props.u)}
     <header class="lhead">
       <div class="lhead__text">
-        <div class="tag-row"><span class="status-pill">Commercial premises</span><span class="status-pill status-pill--sale">For sale</span>${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
+        <div class="tag-row"><span class="status-pill">Commercial premises</span>${opTagHtml(props, "status-pill")}${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
         <h2>${escapeHtml(listingHeadline(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
@@ -1612,7 +1617,7 @@ function listingCard(props, { wrap = true } = {}) {
   const inner = `
     <div class="tag-row">
       <span class="status-pill">Commercial premises</span>
-      <span class="status-pill status-pill--sale">For sale</span>
+      ${opTagHtml(props, "status-pill")}
     </div>
     <h3>${escapeHtml(listingHeadline(props))}</h3>
     ${[props.n, props.d].filter(Boolean).length ? locationRow(props.n, props.d) : ""}

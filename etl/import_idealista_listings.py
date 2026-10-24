@@ -70,11 +70,11 @@ def listing_code(item: dict) -> str:
 
 
 def load_merged_items() -> list[dict]:
-    """Merge every Madrid premises raw export; dedupe by propertyCode (richest row wins)."""
+    """Merge every premises raw export (any city, sale + rent); dedupe by propertyCode (richest row wins)."""
     raw_dir = ROOT / "data" / "raw"
     paths = sorted(
         p
-        for p in raw_dir.glob("mad_idealista_premises_sale*.json")
+        for p in raw_dir.glob("*_idealista_premises_*.json")
         if p.is_file() and not p.name.endswith(".meta.json")
     )
     if RAW.exists() and RAW not in paths:
@@ -837,7 +837,7 @@ def main() -> None:
 
     areas = json.loads(AREAS.read_text(encoding="utf-8"))
 
-    index = AreaIndex(areas["features"], "mad-")
+    index = AreaIndex(areas["features"], "")  # Madrid + Barcelona barrios
 
     features: list[dict] = []
 
@@ -928,11 +928,11 @@ def main() -> None:
 
             "source": "idealista",
 
-            "operation": "sale",
+            "operation": sorted({f["properties"]["op"] for f in features}),
 
             "propertyType": "premises",
 
-            "city": "Madrid",
+            "city": sorted({f["properties"]["m"] for f in features if f["properties"]["m"]}),
 
             "count": len(features),
 
@@ -968,11 +968,18 @@ def main() -> None:
 
         meta = json.loads(META.read_text(encoding="utf-8"))
 
+        counts: dict[str, int] = {}
+        for f in features:
+            pr = f["properties"]
+            key = f'{(pr["pr"] or pr["m"] or "other").lower()}_{pr["op"]}'
+            counts[key] = counts.get(key, 0) + 1
         meta["idealistaListings"] = {
 
-            "madrid": len(features),
+            "total": len(features),
 
-            "operation": "sale",
+            "counts": counts,
+
+            "operation": ["sale", "rent"],
 
             "detailFields": collection["meta"]["detailFields"],
 

@@ -800,7 +800,7 @@ function renderAreaRanking() {
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(props.name)}</span>
         <span class="row-city">${escapeHtml(props.city)}</span>
-        <span class="row-area-score">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} barrios · raw fit ${Math.round(props.score)}`, false, true, `${r.text} · raw ${Math.round(props.score)}`); })()}</span>
+        <span class="row-area-score">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} barrios · raw fit ${Math.round(props.score)}`, false, true, r.text); })()}</span>
       </button></li>`;
     })
     .join("");
@@ -923,7 +923,7 @@ function renderListingRanking() {
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}${listingOutlier(item.props) ? `<span class="row-tag row-tag--warn" title="${escapeHtml(listingOutlier(item.props))}">⚠ outlier</span>` : ""}</span>
-        <span class="score-bar-wrap">${tev ? scoreBarHtml(tev.soft, `${state.tenant.name} soft score ${tev.soft}/100`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, `${item.rank.text} · raw ${item.rank.raw}`)}</span>
+        <span class="score-bar-wrap">${tev ? scoreBarHtml(tev.soft, `${state.tenant.name} soft score ${tev.soft}/100`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text)}</span>
       </button></li>`;
         })
         .join("")
@@ -1377,21 +1377,18 @@ function nearbyCompetitorScore(nearby) {
 
 function nearbyPlacesBlock(nearby) {
   if (!Number.isFinite(nearby?.count)) return "";
-  const score = nearbyCompetitorScore(nearby);
-  const rating = nearby.rating ? ` · avg ${nearby.rating}★` : "";
-  const chips = (nearby.names || [])
-    .slice(0, 6)
-    .map((name) => `<span class="nearby-chip">${escapeHtml(name)}</span>`)
-    .join("");
-  return `<div class="nearby-block">
-    ${fitScoreRowHtml("Nearby competitors", score)}
-    <p class="nearby-summary">${formatNumber(nearby.count)} Google places of this type within 400 m${rating}</p>
-    ${chips ? `<div class="nearby-chips">${chips}</div>` : ""}
-  </div>`;
+  const names = (nearby.names || []).slice(0, 12);
+  const noun = nearby.count === 1 ? "similar business" : "similar businesses";
+  const rating = nearby.rating ? ` · avg ${nearby.rating}★ on Google` : "";
+  const line = `<b>${formatNumber(nearby.count)}</b> ${noun} within 400 m`;
+  if (!names.length) return `<p class="near-line">${line}${infoTip("Google Places listings whose main type matches this business, within a 400 m radius (about a 5-minute walk).")}</p>`;
+  return `<details class="near-line"><summary>${line}<span class="near-line__more">Show names</span></summary>
+    <ul class="near-list">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>
+    <p class="unit-note">Google Places, main type only${rating}.</p></details>`;
 }
 
 function walkBreakdownHtml(scored, nearby) {
-  return `${nearbyPlacesBlock(nearby)}<p class="unit-note">${escapeHtml(leadFrom(scored.parts))}</p>${partsHtml(scored.parts)}`;
+  return `${nearbyPlacesBlock(nearby)}<details class="flat-more"><summary>Walk factors</summary><p class="unit-note">${escapeHtml(leadFrom(scored.parts))}</p>${partsHtml(scored.parts)}</details>`;
 }
 
 function listingSpecsHtml(detail, props, options = {}) {
@@ -1516,35 +1513,48 @@ function cityPercentile(areaProps, getter) {
   return Math.round(rankValue(pool, value) * 100);
 }
 
+/** Plain words for a city percentile — describes the amount, not good/bad. */
+function pctWords(pct, city) {
+  if (pct == null) return "";
+  if (pct >= 90) return `Among the highest in ${city}`;
+  if (pct >= 70) return "Above average";
+  if (pct >= 30) return "About average";
+  if (pct >= 10) return "Below average";
+  return `Among the lowest in ${city}`;
+}
+
+function infoTip(text) {
+  return `<span class="score-tip" tabindex="0" aria-label="${escapeHtml(text)}"><span class="score-tip__mark" aria-hidden="true">i</span><span class="score-tip__bubble">${escapeHtml(text)}</span></span>`;
+}
+
 const WHY_GROUPS = [
   {
     title: "Demand",
     rows: [
-      { part: () => scorePartLabel("foot"), name: "Footfall (open premises)", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
-      { part: () => scorePartLabel("popDensity"), name: "Residents", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
-      { part: () => scorePartLabel("income"), name: "Disposable income", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
-      { part: () => "Age profile", name: "Median age", get: (p) => p.age_median ?? p.age_mean, fmt: (v, p) => `${v} yrs · mean ${p.age_mean ?? "–"} · 65+ ${p.pct_65 ?? "–"}%` },
+      { part: () => scorePartLabel("foot"), name: "Footfall", tip: "Open shops and businesses per km² — a proxy for how many people walk past.", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("popDensity"), name: "Residents", tip: "People living per km² in this neighbourhood (municipal census).", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("income"), name: "Disposable income", tip: "Average disposable income per person in this neighbourhood.", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
     ],
   },
   {
     title: "Competition",
     rows: [
-      { part: () => scorePartLabel("competitors"), name: "Same-type businesses", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
-      { part: () => scorePartLabel("pals"), name: "Complementary shops", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
+      { part: () => scorePartLabel("competitors"), name: "Same-type businesses", tip: "Open businesses of the same type in this neighbourhood. Fewer usually means less competition.", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
+      { part: () => scorePartLabel("pals"), name: "Complementary shops", tip: "Shops that bring the same customers (e.g. a café near a bakery).", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
     ],
   },
   {
     title: "Access",
     rows: [
-      { part: () => scorePartLabel("metro"), name: "Public transit", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
-      { part: () => null, name: "Road traffic", get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
+      { part: () => scorePartLabel("metro"), name: "Public transit", tip: "Metro and bus stops in this neighbourhood.", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
+      { part: () => null, name: "Road traffic", tip: "Measured vehicles per hour on nearby roads. Context only.", get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
     ],
   },
   {
     title: "Supply",
     rows: [
-      { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
-      { part: () => scorePartLabel("room"), name: "Empty / closed doors", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", tip: "Square metres of retail space per km² — how commercial the area is.", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
+      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². Some vacancy means room to open; a lot can mean a weak street.", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
     ],
   },
 ];
@@ -1552,62 +1562,60 @@ const WHY_GROUPS = [
 function whyRowHtml(row, areaProps) {
   const value = row.get(areaProps);
   if (!Number.isFinite(value)) return "";
-  const label = row.part();
-  const part = label ? (areaProps.parts || []).find((p) => p.label === label) : null;
   const pct = cityPercentile(areaProps, row.get);
-  const line = part?.line || (row.line ? row.line(pct) : "Context only — not weighted for this concept");
-  const tag = part ? `<span class="why-tag" title="City percentile used in the score (0–100)">fit ${Math.round(part.value * 100)}</span>` : `<span class="why-tag why-tag--muted">context</span>`;
   return `<li class="why-row">
-    <div class="why-row__top"><span class="why-row__name">${escapeHtml(row.name)}</span>${tag}</div>
-    <div class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</div>
-    <div class="why-row__pct" title="Percentile vs ${escapeHtml(areaProps.city)} neighbourhoods"><span class="why-bar${row.invert ? " why-bar--inv" : ""}"><i style="width:${100 - (pct ?? 0)}%"></i></span><em>P${pct ?? "–"} in ${escapeHtml(areaProps.city)}</em></div>
-    <p class="why-row__line">${escapeHtml(line)}</p>
+    <span class="why-row__name">${escapeHtml(row.name)}${row.tip ? infoTip(row.tip) : ""}</span>
+    <span class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</span>
+    <span class="why-row__word">${escapeHtml(pctWords(pct, areaProps.city))}</span>
   </li>`;
 }
 
-function whyScoreHtml(areaProps) {
-  const parts = (areaProps.parts || []).slice();
-  const byValue = parts.slice().sort((a, b) => b.value - a.value);
+function whyReasons(areaProps) {
+  const byValue = (areaProps.parts || []).slice().sort((a, b) => b.value - a.value);
   const strengths = byValue.filter((p) => p.value >= 0.5).slice(0, 3);
-  // Only genuinely weak signals: below 0.4 and not described as neutral/"balanced".
-  const weaknesses = byValue.slice().reverse().filter((p) => p.value < 0.4 && !/balanced|average|typical/i.test(p.line || "")).slice(0, 3);
-  const li = (p) => `<li><b>${escapeHtml(p.label)}</b><span>${escapeHtml(p.line)}</span></li>`;
+  const watch = byValue.slice().reverse().filter((p) => p.value < 0.4 && !/balanced|average|typical/i.test(p.line || "")).slice(0, 2);
+  return { strengths, watch };
+}
+
+function whyScoreHtml(areaProps) {
+  const { strengths, watch } = whyReasons(areaProps);
+  const li = (p, kind) => `<li class="reason reason--${kind}"><span class="reason__ico" aria-hidden="true">${kind === "good" ? "✓" : "!"}</span><span>${escapeHtml(p.line || p.label)}</span></li>`;
+  const reasons = [...strengths.map((p) => li(p, "good")), ...watch.map((p) => li(p, "bad"))].join("")
+    || `<li class="reason"><span class="reason__ico">·</span><span>Nothing stands out either way for this business type.</span></li>`;
   const groups = WHY_GROUPS.map((g) => {
     const rows = g.rows.map((r) => whyRowHtml(r, areaProps)).join("");
-    return rows ? `<div class="why-group"><h4>${g.title}</h4><ul>${rows}</ul></div>` : "";
+    return rows ? `<h4 class="why-group__h">${g.title}</h4><ul class="why-list">${rows}</ul>` : "";
   }).join("");
-  return `<div class="why-summary">
-      <div class="why-col why-col--good"><h4>Top strengths</h4><ul>${strengths.map(li).join("") || "<li><span>No standout strengths for this concept.</span></li>"}</ul></div>
-      <div class="why-col why-col--bad"><h4>Top weaknesses</h4><ul>${weaknesses.map(li).join("") || "<li><span>No clear weak spots.</span></li>"}</ul></div>
-    </div>
-    <div class="why-groups">${groups}</div>`;
+  return `<ul class="reasons">${reasons}</ul>
+    <details class="flat-more"><summary>Show all factors</summary>
+      <p class="unit-note">Each figure is for the neighbourhood (${escapeHtml(areaProps.name)}), compared with other ${escapeHtml(areaProps.city)} neighbourhoods.</p>
+      ${groups}</details>`;
 }
 
 function listingRankRingHtml(props, concept) {
   const r = listingRank(props);
-  return fitRingHtml(r.pct, `${r.text} for ${concept} (rank, not raw score)`);
+  return fitRingHtml(r.pct, `${r.text} for ${concept}`);
 }
 
 function listingFitHtml(areaProps, concept, props) {
   if (!areaProps) {
-    return `<section class="card-section lwhy"><p class="live-note">No barrio score for this pin yet.</p><div class="visit-live fit-subsection--walk" hidden></div></section>`;
+    return `<p class="empty-state">No neighbourhood data for this location yet, so there is no score to explain.</p><div class="visit-live fit-subsection--walk" hidden></div>`;
   }
-  return `<section class="card-section lwhy">
+  return `<section class="flat">
     <div class="lwhy__head">
       <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</div>
       <div>
-        <h3 class="lwhy__title">Why this score</h3>
+        <h3 class="flat__h">Why it ranks here${infoTip("The ring is this listing's rank among comparable listings (same city, same sale/rent), based on its neighbourhood and a 10-minute walk around the door.")}</h3>
         <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
-        <p class="lwhy__sub"><span data-sub="raw">Raw fit <b>${props ? listingFitScore(props) : Math.round(areaProps.score)}</b>/100</span> · avg of neighbourhood <b data-sub="area">${Math.round(areaProps.score)}</b> · 10-minute walk <b data-sub="walk">…</b> · ${escapeHtml(areaProps.name)}, ${escapeHtml(areaProps.city)}</p>
       </div>
     </div>
     ${whyScoreHtml(areaProps)}
-    ${ageChartHtml(areaProps)}
-    ${state.tenant && props ? tenantChecksHtml(state.tenant, state.tenantEval?.get(props.id), props.id) : ""}
-    <details class="lwhy__walk" open><summary>Around this door (10-minute walk)</summary>
-      <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
-    </details>
-  </section>`;
+  </section>
+  <section class="flat">
+    <h3 class="flat__h">Around this door${infoTip("A 10-minute walk from the entrance, drawn on the map in blue.")}</h3>
+    <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
+  </section>
+  ${ageChartHtml(areaProps)}`;
 }
 
 function listingHeroHtml(images, url) {
@@ -1636,44 +1644,73 @@ function listingModalContent(props) {
   const di = props.op === "rent" ? null : dealInputs(props, coords, state.listings);
   const dm = di ? dealMath(di) : null;
   const pm2 = props.p && props.sz ? Math.round(props.p / props.sz) : null;
-  const kpi = (label, value, attr = "") => `<div class="lkpi"><span>${label}</span><b ${attr}>${value}</b></div>`;
+  const rank = areaProps ? listingRank(props) : null;
+  const kpi = (label, value, tip, attr = "") => `<div class="lkpi"><span>${label}${tip ? infoTip(tip) : ""}</span><b ${attr}>${value}</b></div>`;
   const kpis = `<div class="lkpis">
-    ${kpi("Asking price", props.p ? formatEuro(props.p) : "—")}
-    ${kpi("€/m²", pm2 ? `${formatNumber(pm2)} €` : "—")}
-    ${kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
-    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), "data-hero-yield") : ""}
+    ${kpi(props.op === "rent" ? "Rent / month" : "Asking price", props.p ? formatEuro(props.p) : "—")}
+    ${kpi("Per m²", pm2 ? `${formatNumber(pm2)} €` : "—", `Price divided by the ${props.sz ? formatNumber(props.sz) : ""} m² built area${props.op === "rent" ? " (monthly)" : ""}.`)}
+    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), "Estimated yearly rent after costs, divided by the total purchase cost. Open the Deal tab to change the assumptions.", "data-hero-yield") : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
+    ${rank ? kpi("Rank", rank.top <= 50 ? `Top ${rank.top}%` : `Bottom ${Math.max(1, 100 - rank.top + 1)}%`, `Among ${formatNumber(rank.n)} ${rank.group} for ${concept}.`) : ""}
   </div>`;
-  const partialNote = props.full
-    ? ""
-    : `<p class="listing-partial-note">Search-snapshot lead only — re-scrape with <strong>fetchDetails</strong> for full characteristics.</p>`;
-  return `<article class="modal-listing modal-listing--v2" id="detail-modal-title">
-    ${listingHeroHtml(images, props.u)}
+  let verdict = "";
+  if (areaProps) {
+    const { strengths, watch } = whyReasons(areaProps);
+    const good = strengths[0]?.line, bad = watch[0]?.line;
+    const dot = (t) => (t && !/[.!?]$/.test(t) ? `${t}.` : t);
+    verdict = `<p class="verdict"><b>${escapeHtml(rank.text)} for ${escapeHtml(concept)}.</b> ${escapeHtml([dot(good), bad && dot(`Watch out: ${bad.charAt(0).toLowerCase()}${bad.slice(1)}`)].filter(Boolean).join(" "))}</p>`;
+  }
+  const outlier = listingOutlier(props);
+  const tenantEv = state.tenant ? state.tenantEval?.get(props.id) : null;
+  const pills = [
+    opTagHtml(props, "status-pill"),
+    /^nave\b/i.test(props.t || "") ? `<span class="status-pill">Warehouse (nave)</span>` : "",
+    outlier ? `<span class="status-pill status-pill--warn" title="${escapeHtml(outlier)}">⚠ ${escapeHtml(outlier)}</span>` : "",
+    props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}% price cut</span>` : "",
+    props.inv?.transfer ? `<span class="status-pill">Business transfer</span>` : "",
+  ].join("");
+  const tab = (id, label, on = false) => `<button type="button" role="tab"${on ? ' class="is-on"' : ""} aria-selected="${on}" data-sec="${id}">${label}</button>`;
+  return `<article class="modal-listing modal-listing--v2 modal-listing--v3" id="detail-modal-title">
     <header class="lhead">
       <div class="lhead__text">
-        <div class="tag-row"><span class="status-pill">${/^nave\b/i.test(props.t || "") ? "Warehouse (nave)" : "Commercial premises"}</span>${(() => { const o = listingOutlier(props); return o ? `<span class="status-pill status-pill--warn" title="${escapeHtml(o)}">⚠ ${escapeHtml(o)}</span>` : ""; })()}${opTagHtml(props, "status-pill")}${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
+        <div class="tag-row">${pills}</div>
         <h2>${escapeHtml(listingShortTitle(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
     </header>
-    ${kpis}
     <nav class="lnav" role="tablist" aria-label="Card sections">
-      <button type="button" role="tab" class="is-on" aria-selected="true" data-sec="sec-overview">Overview</button>
-      <button type="button" role="tab" aria-selected="false" data-sec="sec-why">Why this score</button>
-      ${dm ? `<button type="button" role="tab" aria-selected="false" data-sec="sec-deal">Deal</button>` : ""}
-      <button type="button" role="tab" aria-selected="false" data-sec="sec-details">Details</button>
+      ${tab("sec-overview", "Overview", true)}
+      ${tab("sec-why", "Why")}
+      ${tenantEv ? tab("sec-tenant", escapeHtml(state.tenant.name.split(/[ ·]/)[0])) : ""}
+      ${dm ? tab("sec-deal", "Deal") : ""}
+      ${tab("sec-details", "Details")}
     </nav>
     <div id="sec-overview" class="lsec" role="tabpanel">
-      ${partialNote}
-      ${listingActivityHtml(props.inv || {})}
-      ${listingFeaturesHtml(props.inv || {})}
-      ${listingDescToggleHtml(props)}
+      ${verdict}
+      ${kpis}
+      ${listingHeroHtml(images, props.u)}
     </div>
     <div id="sec-why" class="lsec" role="tabpanel" hidden>${listingFitHtml(areaProps, concept, props)}</div>
+    ${tenantEv ? `<div id="sec-tenant" class="lsec" role="tabpanel" hidden>${tenantChecksHtml(state.tenant, tenantEv, props.id)}</div>` : ""}
     ${dm ? `<div id="sec-deal" class="lsec" role="tabpanel" hidden>${dealCalculatorHtml(props, coords, state.listings)}</div>` : ""}
-    <div id="sec-details" class="lsec" role="tabpanel" hidden>
-      ${investorFieldsHtml(props)}
-    </div>
+    <div id="sec-details" class="lsec" role="tabpanel" hidden>${listingDetailsTabHtml(props)}</div>
   </article>`;
+}
+
+function listingDetailsTabHtml(props) {
+  const inv = props.inv && typeof props.inv === "object" ? props.inv : {};
+  const parts = [];
+  if (Object.keys(inv).length) {
+    parts.push(investorFieldsHtml({ ...props, inv }));
+    parts.push(listingFeaturesHtml(inv));
+    parts.push(listingActivityHtml(inv));
+  }
+  const desc = listingDescToggleHtml({ ...props, inv });
+  if (desc) parts.push(desc);
+  const body = parts.filter((h) => /<(dd|li|div class="listing-desc)/.test(h || "")).join("");
+  if (!body) {
+    return `<div class="empty-state"><b>No premises details for this listing</b><p>Idealista didn't publish characteristics or a description for it, or it hasn't been scraped in full yet.</p>${idealistaLink(props.u, "Check the ad on Idealista")}</div>`;
+  }
+  return `${body}${idealistaLink(props.u)}`;
 }
 
 function areaModalContent(props) {
@@ -1795,15 +1832,20 @@ function ageChartHtml(p) {
   if (!p?.age_bands?.length) return "";
   const cityPool = (state.areas?.features || []).map((f) => f.properties).filter((x) => x.city === p.city && x.age_bands?.length);
   const avg = AGE_LABELS.map((_, i) => cityPool.reduce((s, x) => s + x.age_bands[i], 0) / (cityPool.length || 1));
-  const max = Math.max(...p.age_bands, ...avg, 1);
-  const bars = p.age_bands
-    .map((v, i) => `<div class="agec__col" title="${AGE_LABELS[i]}: ${v}% (city ${avg[i].toFixed(1)}%)"><div class="agec__bar"><span class="agec__fill" style="height:${(100 * v / max).toFixed(1)}%"></span><span class="agec__avg" style="bottom:${(100 * avg[i] / max).toFixed(1)}%"></span></div><b>${Math.round(v)}%</b><small>${AGE_LABELS[i]}</small></div>`)
-    .join("");
-  return `<section class="card-section agec">
-    <h3 class="card-section__title">Who lives here</h3>
-    <p class="agec__nums"><span><b>${p.age_median ?? "–"}</b> median age</span><span><b>${p.age_mean ?? "–"}</b> mean age</span></p>
-    <div class="agec__chart">${bars}</div>
-    <p class="unit-note">Share of residents by age band; tick = ${escapeHtml(p.city)} average. Padrón municipal 2026 (${p.city === "Barcelona" ? "Open Data BCN" : "datos.madrid.es"}).</p>
+  const ages = cityPool.map((x) => x.age_median).filter(Number.isFinite).sort((a, b) => a - b);
+  const cityMed = ages.length ? ages[Math.floor(ages.length / 2)] : null;
+  const bar = (vals, who) => {
+    const tot = vals.reduce((a, b) => a + b, 0) || 1;
+    return `<div class="agebar__row"><span class="agebar__who">${who}</span><div class="agebar" role="img" aria-label="${who}: ${vals.map((v, i) => `${AGE_LABELS[i]} ${Math.round(v)}%`).join(", ")}">${vals.map((v, i) => { const w = (100 * v) / tot; return `<span class="agebar__seg agebar__seg--${i}" style="width:${w.toFixed(1)}%" title="${AGE_LABELS[i]}: ${Math.round(v)}%">${w >= 9 ? `${Math.round(v)}%` : ""}</span>`; }).join("")}</div></div>`;
+  };
+  const diff = cityMed != null && p.age_median != null ? p.age_median - cityMed : null;
+  const cmp = diff == null ? "" : Math.abs(diff) < 1.5 ? `about the ${escapeHtml(p.city)} norm` : `${Math.abs(Math.round(diff))} yrs ${diff > 0 ? "older" : "younger"} than ${escapeHtml(p.city)}`;
+  return `<section class="flat agec2">
+    <h3 class="flat__h">Who lives here</h3>
+    <p class="agec2__head"><b>${p.age_median ?? "–"}</b> median age${cmp ? `<span>${cmp}</span>` : ""}</p>
+    ${bar(p.age_bands, "Here")}${bar(avg, escapeHtml(p.city))}
+    <div class="agebar__legend">${AGE_LABELS.map((l, i) => `<span><i class="agebar__seg--${i}"></i>${l}</span>`).join("")}</div>
+    <p class="unit-note">Share of residents by age. Padrón municipal 2026 (${p.city === "Barcelona" ? "Open Data BCN" : "datos.madrid.es"}).</p>
   </section>`;
 }
 
@@ -1983,11 +2025,11 @@ function showCatchment(lon, lat) {
       const feature = walk.type === "FeatureCollection" ? walk.features?.[0] : null;
       if (feature) map.getSource(MAP_SOURCES.walk)?.setData(walk);
       if (!feature) {
-        slot.innerHTML = `<p class="kicker">Proximity breakdown</p><p class="live-note">${escapeHtml(walk.error || nearby.error || "Walk shape is unavailable.")}</p>${nearbyPlacesBlock(nearby)}`;
+        slot.innerHTML = `<p class="live-note">The 10-minute walk is unavailable right now.</p>${nearbyPlacesBlock(nearby)}`;
         return;
       }
       if (!state.places?.length) {
-        slot.innerHTML = `<p class="kicker">Proximity breakdown</p><p class="live-note">The blue shape is a 10-minute walk. Premises are still loading, so the proximity score is not ready.</p>${nearbyPlacesBlock(nearby)}`;
+        slot.innerHTML = `<p class="live-note">The blue shape is a 10-minute walk. Premises are still loading, so the proximity score is not ready.</p>${nearbyPlacesBlock(nearby)}`;
         return;
       }
       const scored = scoreWalk(lon, lat, feature);
@@ -1996,7 +2038,7 @@ function showCatchment(lon, lat) {
         renderListingRanking();
       }
       refreshFitScoresUi(areaScore, scored.score);
-      slot.innerHTML = `<p class="kicker">Proximity breakdown</p>${walkBreakdownHtml(scored, nearby)}`;
+      slot.innerHTML = `${walkBreakdownHtml(scored, nearby)}`;
     })
     .catch(() => {
       if (token === catchmentToken) {
@@ -2742,7 +2784,11 @@ map.on("click", (event) => {
   }
   const listing = listingNearCursor(event.point);
   if (listing) {
-    openListingDetail(listing.properties, listing.geometry.coordinates);
+    // MapLibre flattens nested feature properties to JSON strings (inv, x), so the
+    // card must use the original listing object, not the rendered feature's props.
+    const full = state.listingById.get(listing.properties.id);
+    if (full) openListingById(full.properties.id);
+    else openListingDetail(listing.properties, listing.geometry.coordinates);
     return;
   }
   const shop = placeNearCursor(event.point);
@@ -2789,6 +2835,13 @@ document.addEventListener("click", (event) => {
       b.setAttribute("aria-selected", String(on));
     });
     card.querySelectorAll(".lsec").forEach((sec) => { sec.hidden = sec.id !== tab.dataset.sec; });
+    // A long tab left scrolled deep would otherwise open the next tab mid-way (or past its end).
+    const dialog = card.closest(".detail-modal__dialog");
+    const nav = card.querySelector(".lnav");
+    if (dialog && nav) {
+      const navTop = nav.getBoundingClientRect().top - dialog.getBoundingClientRect().top + dialog.scrollTop - 8;
+      if (dialog.scrollTop > navTop) dialog.scrollTop = navTop;
+    }
     return;
   }
   const lang = event.target.closest(".ldesc2 [data-lang]");

@@ -846,16 +846,19 @@ function listingHasAreaFit(props) {
 }
 
 function tenantRowCaption(ev) {
-  return `${state.tenant.name}: ✓${ev.pass} ✗${ev.fail} ?${ev.unknown}`;
+  const ad = ev.pass - ev.confirmed;
+  return `${state.tenant.name}: ✓${ev.confirmed} confirmed${ad ? ` · ${ad} from ad` : ""} · ✗${ev.fail} · ${ev.unknown} to check`;
 }
 
 function buildOverallRanking() {
   if (state.tenant && state.tenantEval) {
-    const rows = rankableListings().map((r) => ({ ...r, tev: state.tenantEval.get(r.id) })).filter((r) => r.tev);
+    const all = rankableListings().map((r) => ({ ...r, tev: state.tenantEval.get(r.id) })).filter((r) => r.tev);
+    const rows = state.showExcluded ? all : all.filter((r) => !r.tev.excluded);
+    state.tenantHidden = all.length - rows.length;
     const ok = rows.filter((r) => r.tev.ok);
     state.tenantNearMiss = !ok.length;
     const pool = ok.length ? ok : rows;
-    return pool.sort((a, b) => a.tev.fail - b.tev.fail || b.tev.soft - a.tev.soft).slice(0, 14);
+    return pool.sort((a, b) => a.tev.fail - b.tev.fail || b.tev.confirmed - a.tev.confirmed || b.tev.pass - a.tev.pass || a.tev.unknown - b.tev.unknown || b.tev.soft - a.tev.soft).slice(0, 14);
   }
   return rankableListings()
     .sort((a, b) => {
@@ -866,9 +869,48 @@ function buildOverallRanking() {
     .slice(0, 14);
 }
 
+function renderTenantToggle() {
+  let box = document.getElementById("tenant-excl-toggle");
+  if (!state.tenant?.retail) { if (box) box.hidden = true; return; }
+  if (!box) {
+    box = document.createElement("label");
+    box.id = "tenant-excl-toggle";
+    box.className = "tenant-excl-toggle";
+    listingRankingTitle.insertAdjacentElement("afterend", box);
+  }
+  box.hidden = false;
+  const n = state.tenantHidden || 0;
+  box.innerHTML = `<input type="checkbox" id="show-excluded"${state.showExcluded ? " checked" : ""}> Show warehouses &amp; outliers${n || state.showExcluded ? ` <span class="unit-note">(${state.showExcluded ? "shown" : `${n} hidden`})</span>` : ""}`;
+}
+
+document.addEventListener("change", (event) => {
+  if (event.target.id !== "show-excluded") return;
+  state.showExcluded = event.target.checked;
+  renderListingRanking();
+});
+
+document.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-tcheck]");
+  if (b) {
+    const box = b.closest("[data-tenant-listing]");
+    const id = box?.dataset.tenantListing;
+    if (!id || !state.tenant) return;
+    saveCheck(id, b.dataset.tcheck, b.dataset.v === "clear" ? "clear" : JSON.parse(b.dataset.v));
+    refreshTenantEval();
+    box.outerHTML = tenantChecksHtml(state.tenant, state.tenantEval?.get(id), id);
+    renderListingRanking();
+    return;
+  }
+  const c = event.target.closest("[data-copy-asks]");
+  if (c) {
+    navigator.clipboard?.writeText(c.dataset.copyAsks).then(() => { c.textContent = "Copied ✓"; }, () => { c.textContent = "Copy failed — select the list"; });
+  }
+});
+
 function renderListingRanking() {
   if (!listingRanking || !listingRankingTitle) return;
   const items = buildOverallRanking();
+  renderTenantToggle();
   listingRankingTitle.textContent = state.tenant ? `Property ranking · ${state.tenant.name}${state.tenantNearMiss ? " (no full pass in view — closest)" : " · hard filters passed"}` : rankingConceptTitle("property");
   listingRanking.innerHTML = items.length
     ? items
@@ -880,7 +922,7 @@ function renderListingRanking() {
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
-        <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}</span>
+        <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}${listingOutlier(item.props) ? `<span class="row-tag row-tag--warn" title="${escapeHtml(listingOutlier(item.props))}">⚠ outlier</span>` : ""}</span>
         <span class="score-bar-wrap">${tev ? scoreBarHtml(tev.soft, `${state.tenant.name} soft score ${tev.soft}/100`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, `${item.rank.text} · raw ${item.rank.raw}`)}</span>
       </button></li>`;
         })
@@ -1514,7 +1556,7 @@ function whyRowHtml(row, areaProps) {
   const part = label ? (areaProps.parts || []).find((p) => p.label === label) : null;
   const pct = cityPercentile(areaProps, row.get);
   const line = part?.line || (row.line ? row.line(pct) : "Context only — not weighted for this concept");
-  const tag = part ? `<span class="why-tag">fit ${part.score}</span>` : `<span class="why-tag why-tag--muted">context</span>`;
+  const tag = part ? `<span class="why-tag" title="City percentile used in the score (0–100)">fit ${Math.round(part.value * 100)}</span>` : `<span class="why-tag why-tag--muted">context</span>`;
   return `<li class="why-row">
     <div class="why-row__top"><span class="why-row__name">${escapeHtml(row.name)}</span>${tag}</div>
     <div class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</div>
@@ -1561,7 +1603,7 @@ function listingFitHtml(areaProps, concept, props) {
     </div>
     ${whyScoreHtml(areaProps)}
     ${ageChartHtml(areaProps)}
-    ${state.tenant && props ? tenantChecksHtml(state.tenant, state.tenantEval?.get(props.id)) : ""}
+    ${state.tenant && props ? tenantChecksHtml(state.tenant, state.tenantEval?.get(props.id), props.id) : ""}
     <details class="lwhy__walk" open><summary>Around this door (10-minute walk)</summary>
       <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
     </details>
@@ -1608,7 +1650,7 @@ function listingModalContent(props) {
     ${listingHeroHtml(images, props.u)}
     <header class="lhead">
       <div class="lhead__text">
-        <div class="tag-row"><span class="status-pill">Commercial premises</span>${opTagHtml(props, "status-pill")}${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
+        <div class="tag-row"><span class="status-pill">${/^nave\b/i.test(props.t || "") ? "Warehouse (nave)" : "Commercial premises"}</span>${(() => { const o = listingOutlier(props); return o ? `<span class="status-pill status-pill--warn" title="${escapeHtml(o)}">⚠ ${escapeHtml(o)}</span>` : ""; })()}${opTagHtml(props, "status-pill")}${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
         <h2>${escapeHtml(listingShortTitle(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
@@ -2413,6 +2455,7 @@ async function bootstrapAppData() {
     const fullListings = allListings.filter((feature) => feature.properties?.full);
     const pool = FULL_DETAIL_LEADS_ONLY && fullListings.length ? fullListings : allListings;
     state.listings = dedupeListingFeatures(pool);
+    LISTING_MEDIANS = null;
     state.listingById = new Map(state.listings.map((feature) => [feature.properties.id, feature]));
     refreshTenantEval();
     tallyListings();

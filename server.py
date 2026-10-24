@@ -146,7 +146,7 @@ class MapHandler(SimpleHTTPRequestHandler):
             payload = post_json(
                 "https://places.googleapis.com/v1/places:searchNearby",
                 {
-                    "includedTypes": types,
+                    "includedPrimaryTypes": types,
                     "maxResultCount": 10,
                     "rankPreference": "DISTANCE",
                     "locationRestriction": {

@@ -250,7 +250,7 @@ async function handleNearby(request, env, ctx) {
   const kind = url.searchParams.get("kind") || "bakery";
   if (!(kind in PLACE_TYPES)) return json({ error: "Unknown kind" }, 400);
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return json({ error: "Need a longitude and a latitude" }, 400);
-  const cacheKey = `nearby:${lon.toFixed(4)}:${lat.toFixed(4)}:${kind}`;
+  const cacheKey = `nearby2:${lon.toFixed(4)}:${lat.toFixed(4)}:${kind}`;
   const cached = await cacheGet(env, cacheKey);
   if (cached) return json(cached, 200, "HIT");
   const types = PLACE_TYPES[kind];
@@ -262,7 +262,7 @@ async function handleNearby(request, env, ctx) {
       "X-Goog-FieldMask": "places.displayName,places.rating,places.userRatingCount",
     },
     body: JSON.stringify({
-      includedTypes: types,
+      includedPrimaryTypes: types, // primary only: supermarkets list "bakery" as a secondary type
       maxResultCount: 10,
       rankPreference: "DISTANCE",
       locationRestriction: { circle: { center: { latitude: lat, longitude: lon }, radius: 400 } },

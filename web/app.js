@@ -810,16 +810,86 @@ function refreshTenantEval() {
   state.tenantEval = state.tenant && state.listings?.length ? evaluateTenant(state.tenant, state.listings, state.areaById) : null;
 }
 
-document.addEventListener("change", (event) => {
-  if (event.target.id !== "tenant-select") return;
-  state.tenant = TENANTS[event.target.value] || null;
+function tenantOptionHtml(t, on) {
+  const logo = t ? `<span class="tlogo" style="--tc:${t.color}">${escapeHtml(t.initials)}</span>` : `<span class="tlogo tlogo--any">∗</span>`;
+  const anyVerified = t && [...t.hard, ...t.soft].some((x) => x.verified);
+  return `${logo}<span class="tpick__txt"><b>${escapeHtml(t ? t.name : "Any tenant")}</b><small>${escapeHtml(t ? t.short : "Score by business type")}${t && !anyVerified ? " · press only" : ""}</small></span>`;
+}
+function renderTenantPicker() {
+  const val = document.getElementById("tenant-value");
+  const menu = document.getElementById("tenant-menu");
+  if (!val || !menu) return;
+  val.innerHTML = tenantOptionHtml(state.tenant, true);
+  menu.innerHTML = [null, ...Object.values(TENANTS)].map((t) => {
+    const id = t ? t.id : "";
+    const on = (state.tenant?.id || "") === id;
+    return `<button type="button" role="option" data-tenant="${id}" aria-selected="${on}" class="tpick__opt${on ? " is-on" : ""}">${tenantOptionHtml(t)}</button>`;
+  }).join("");
+}
+function setTenant(id) {
+  state.tenant = TENANTS[id] || null;
   const note = document.getElementById("tenant-note");
+  const bizPicker = document.querySelector('.picker[data-picker="business"]');
+  const implied = document.getElementById("business-implied");
   if (state.tenant) {
     if (state.query?.id !== state.tenant.concept) document.querySelector(`#business-menu [data-value="${state.tenant.concept}"]`)?.click();
+    const label = document.querySelector(`#business-menu [data-value="${state.tenant.concept}"]`)?.textContent || state.tenant.concept;
     if (note) { note.hidden = false; note.innerHTML = `${escapeHtml(state.tenant.blurb)} <a href="${state.tenant.sources[0].url}" target="_blank" rel="noopener">Source</a>`; }
-  } else if (note) note.hidden = true;
+    if (implied) { implied.hidden = false; implied.innerHTML = `Business type: <b>${escapeHtml(label)}</b> <span>· set by ${escapeHtml(state.tenant.name)}</span>`; }
+    if (bizPicker) bizPicker.hidden = true;
+  } else {
+    if (note) note.hidden = true;
+    if (implied) implied.hidden = true;
+    if (bizPicker) bizPicker.hidden = false;
+  }
+  renderTenantPicker();
   refreshTenantEval();
   renderListingRanking();
+}
+document.addEventListener("click", (event) => {
+  const btn = document.getElementById("tenant-btn");
+  const menu = document.getElementById("tenant-menu");
+  if (!btn || !menu) return;
+  const opt = event.target.closest("[data-tenant]");
+  if (opt && menu.contains(opt)) {
+    menu.hidden = true; btn.setAttribute("aria-expanded", "false");
+    setTenant(opt.dataset.tenant);
+    return;
+  }
+  if (btn.contains(event.target)) {
+    menu.hidden = !menu.hidden; btn.setAttribute("aria-expanded", String(!menu.hidden));
+    return;
+  }
+  if (!menu.hidden && !menu.contains(event.target)) { menu.hidden = true; btn.setAttribute("aria-expanded", "false"); }
+});
+document.addEventListener("keydown", (event) => {
+  const menu = document.getElementById("tenant-menu");
+  if (event.key === "Escape" && menu && !menu.hidden) { menu.hidden = true; document.getElementById("tenant-btn")?.focus(); }
+});
+document.addEventListener("DOMContentLoaded", renderTenantPicker);
+if (document.readyState !== "loading") renderTenantPicker();
+
+/* Leaving the app for Google Maps: small confirm first. */
+document.addEventListener("click", (event) => {
+  const chip = event.target.closest("a.pchip[data-leave]");
+  const block = event.target.closest(".near-block");
+  if (chip && block) {
+    event.preventDefault();
+    const box = block.querySelector(".leave-confirm");
+    if (!box) return;
+    box.dataset.href = chip.href;
+    box.querySelector("span").textContent = `Open ${chip.dataset.leave}'s Google Maps profile in a new tab?`;
+    box.hidden = false;
+    box.querySelector(".leave-confirm__go").focus();
+    return;
+  }
+  const go = event.target.closest(".leave-confirm__go");
+  const no = event.target.closest(".leave-confirm__no");
+  if (go || no) {
+    const box = event.target.closest(".leave-confirm");
+    if (go && box.dataset.href) window.open(box.dataset.href, "_blank", "noopener");
+    box.hidden = true;
+  }
 });
 
 function rankableListings() {
@@ -1379,19 +1449,25 @@ function nearbyPlacesBlock(nearby) {
   if (!Number.isFinite(nearby?.count)) return "";
   const noun = nearby.count === 1 ? "similar business" : "similar businesses";
   const avg = nearby.rating ? ` <span class="near-avg">avg ${nearby.rating}★</span>` : "";
-  const tip = infoTip("Businesses on Google Maps whose main category matches this one, within 400 m (about a 5-minute walk). Click a name to open it on Google Maps.");
-  const places = nearby.places?.length ? nearby.places : (nearby.names || []).map((name) => ({ name }));
+  const tip = infoTip("Businesses on Google Maps whose main category matches this one, within 400 m (about a 5-minute walk). The strongest three are shown first (rating × number of reviews). Click one to open its Google Maps profile.");
+  const places = (nearby.places?.length ? nearby.places : (nearby.names || []).map((name) => ({ name })))
+    .slice().sort((a, b) => (b.rating || 0) * (b.reviews || 0) - (a.rating || 0) * (a.reviews || 0));
   const chip = (p) => {
     const meta = [p.rating ? `★ ${p.rating.toFixed(1)}` : "", p.reviews ? `${formatNumber(p.reviews)}` : "", p.price ? "€".repeat(p.price) : ""].filter(Boolean);
     const href = p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
-    return `<a class="pchip" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(p.name)}${p.reviews ? ` · ${p.reviews} Google reviews` : ""}"><span class="pchip__n">${escapeHtml(p.name)}</span>${meta.length ? `<span class="pchip__m">${meta.map((m, i) => i === 1 ? `<span class="pchip__r">(${m})</span>` : `<span>${m}</span>`).join("")}</span>` : ""}</a>`;
+    return `<a class="pchip" data-leave="${escapeHtml(p.name)}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(p.name)}${p.reviews ? ` · ${p.reviews} Google reviews` : ""}"><span class="pchip__n">${escapeHtml(p.name)}</span>${meta.length ? `<span class="pchip__m">${meta.map((m, i) => i === 1 ? `<span class="pchip__r">(${m})</span>` : `<span>${m}</span>`).join("")}</span>` : ""}</a>`;
   };
   return `<div class="near-block"><p class="near-line"><b>${formatNumber(nearby.count)}</b> ${noun} within 400 m${avg}${tip}</p>
-    ${places.length ? `<div class="pchips">${places.slice(0, 12).map(chip).join("")}</div>` : ""}</div>`;
+    ${places.length ? `<div class="pchips">${places.slice(0, 3).map(chip).join("")}${places.length > 3 ? `<details class="pchips__more"><summary>+${places.length - 3} more</summary><div class="pchips">${places.slice(3, 15).map(chip).join("")}</div></details>` : ""}</div>` : ""}
+    <div class="leave-confirm" role="dialog" aria-live="polite" hidden><span></span><button type="button" class="leave-confirm__go">Open</button><button type="button" class="leave-confirm__no">Cancel</button></div></div>`;
 }
 
 function walkBreakdownHtml(scored, nearby) {
-  return `${nearbyPlacesBlock(nearby)}<details class="flat-more flat-more--walk"><summary>Walk factors</summary>${partsHtml(scored.parts)}</details>`;
+  const city = scored.city || "the city";
+  const rows = scored.parts.map((p) => wvRowHtml({ name: p.label, tip: p.tip, dir: p.dir, pct: p.pct, city, small: p.detail })).join("");
+  return `${nearbyPlacesBlock(nearby)}<details class="flat-more flat-more--walk"><summary>Walk factors</summary>
+    <div class="wv-scale"><span>Lowest in ${escapeHtml(city)}</span>${infoTip(`Each dot compares this 10-minute walk with the area around every ${city} listing (per km², so bigger walks don't win just by being bigger). Green = better for this business.`)}<span>Highest</span></div>
+    <ul class="wv-list wv-list--walk">${rows}</ul></details>`;
 }
 
 function listingSpecsHtml(detail, props, options = {}) {
@@ -1550,29 +1626,49 @@ const WHY_GROUPS = [
     title: "Access", icon: "train",
     rows: [
       { part: () => scorePartLabel("metro"), name: "Public transit", tip: "Metro and bus stops in this neighbourhood.", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
-      { part: () => null, name: "Road traffic", tip: "Measured vehicles per hour on nearby roads. Context only.", get: (p) => p.traffic_veh_h, neutral: true, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
+      { part: () => null, name: "Road traffic", tip: () => trafficTip(), dir: () => trafficDir(), get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
     ],
   },
   {
     title: "Supply", icon: "building",
     rows: [
       { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", tip: "Square metres of retail space per km² — how commercial the area is.", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
-      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². Some vacancy means room to open; a lot can mean a weak street.", get: (p) => p.vacant_per_km2, neutral: true, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². A moderate amount is good — there is room to open and rents stay negotiable. Very high vacancy (the red end) usually means a street that is losing trade.", dir: () => "mid", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
     ],
   },
 ];
+
+/* Road traffic: drive-to formats (supermarkets like Aldi, gyms, big-box retail, fast food) want passing cars;
+ * walk-in formats (café, bakery, salon, clinic) do best on moderate traffic — very busy roads mean noise and fewer people on foot. */
+const TRAFFIC_UP = new Set(["grocery", "gym", "fashion", "food", "pharmacy"]);
+function trafficDir() {
+  const id = state.tenant?.concept || state.query?.id;
+  return TRAFFIC_UP.has(id) || state.tenant?.retail ? "up" : "mid";
+}
+function trafficTip() {
+  const who = state.tenant?.name || state.query?.label || "this business";
+  return trafficDir() === "up"
+    ? `Measured vehicles per hour on nearby roads. For ${who} more is better: a drive-to format needs passing cars and easy car access (green = busy).`
+    : `Measured vehicles per hour on nearby roads. For ${who} a moderate amount is best: customers arrive on foot, and very busy roads (red end) mean noise and fewer people walking past. Not part of the score.`;
+}
+
+function wvRowHtml({ name, tip, dir, pct, city, small }) {
+  const p = Math.max(2, Math.min(98, pct ?? 50));
+  const words = pctWords(pct, city);
+  return `<li class="wv">
+    <span class="wv__name">${escapeHtml(name)}${tip ? infoTip(tip) : ""}</span>
+    <span class="wv__track wv__track--${dir}" role="img" aria-label="${escapeHtml(name)}: ${escapeHtml(words)}"><i style="left:${p}%"></i></span>
+    <span class="wv__val"><b>${escapeHtml(words)}</b><small>${escapeHtml(small || "")}</small></span>
+  </li>`;
+}
 
 function whyRowHtml(row, areaProps) {
   const value = row.get(areaProps);
   if (!Number.isFinite(value)) return "";
   const pct = cityPercentile(areaProps, row.get);
-  const dir = row.neutral ? "neutral" : row.invert ? "down" : "up";
-  const p = Math.max(2, Math.min(98, pct ?? 50));
-  return `<li class="wv">
-    <span class="wv__name">${escapeHtml(row.name)}${row.tip ? infoTip(row.tip) : ""}</span>
-    <span class="wv__track wv__track--${dir}" role="img" aria-label="${escapeHtml(row.name)}: ${escapeHtml(pctWords(pct, areaProps.city))}"><i style="left:${p}%"></i></span>
-    <span class="wv__val"><b>${escapeHtml(pctWords(pct, areaProps.city))}</b><small>${escapeHtml(row.fmt(value, areaProps))}</small></span>
-  </li>`;
+  const dir = row.dir ? row.dir() : row.neutral ? "neutral" : row.invert ? "down" : "up";
+  const tip = typeof row.tip === "function" ? row.tip() : row.tip;
+  return wvRowHtml({ name: row.name, tip, dir, pct, city: areaProps.city, small: row.fmt(value, areaProps) });
 }
 
 function whyReasons(areaProps) {
@@ -1593,7 +1689,7 @@ function whyScoreHtml(areaProps) {
   }).join("");
   return `<ul class="reasons">${reasons}</ul>
     <details class="flat-more"><summary>Show all factors</summary>
-      <div class="wv-scale"><span>Lowest in ${escapeHtml(areaProps.city)}</span>${infoTip(`Each dot places ${areaProps.name} among all ${areaProps.city} neighbourhoods. Green = better for this business, red = worse, grey = context only.`)}<span>Highest</span></div>
+      <div class="wv-scale"><span>Lowest in ${escapeHtml(areaProps.city)}</span>${infoTip(`Each dot places ${areaProps.name} among all ${areaProps.city} neighbourhoods. Green = better for this business, red = worse. Two-sided bars (green in the middle-left) mean a moderate amount is best.`)}<span>Highest</span></div>
       <div class="wv-groups">${groups}</div></details>`;
 }
 
@@ -1610,8 +1706,8 @@ function listingFitHtml(areaProps, concept, props) {
     <div class="lwhy__head">
       <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</div>
       <div>
-        <h3 class="flat__h">Strengths &amp; watch-outs${infoTip("The ring shows how this listing ranks among comparable listings (same city, same sale/rent), based on its neighbourhood and a 10-minute walk around the door.")}</h3>
-        <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
+        <h3 class="flat__h">Strengths &amp; watch-outs${infoTip(`The ring ranks this listing among comparable listings (same city, same sale/rent) on location only: its neighbourhood plus a 10-minute walk around the door. Price is not included — check the yield and price separately.${areaProps.lead ? ` What this business looks for: ${areaProps.lead}` : ""}`)}</h3>
+        <p class="lfit__hint">Location fit · price not included</p>
       </div>
     </div>
     ${whyScoreHtml(areaProps)}
@@ -1654,15 +1750,14 @@ function listingModalContent(props) {
   const kpis = `<div class="lkpis">
     ${kpi(props.op === "rent" ? "Rent / month" : "Asking price", props.p ? formatEuro(props.p) : "—")}
     ${kpi("Per m²", pm2 ? `${formatNumber(pm2)} €` : "—", `Price divided by the ${props.sz ? formatNumber(props.sz) : ""} m² built area${props.op === "rent" ? " (monthly)" : ""}.`)}
-    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), `${yieldTipText(di.region)} Open the Calculator tab to change the assumptions.`, `data-hero-yield style="color:${yieldTone(dm.netYield, di.region)}"`) : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
+    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), `${yieldTipText(di.region)} Open the Calculator tab to change the assumptions.`, `data-hero-yield style="color:${yieldTone(dm.netYield, di.region)}"`).replace("</b></div>", `</b><small class="lkpi__sub" data-hero-payback>${dealFmtYears(dm.payback)} payback</small></div>`) : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
     ${rank ? kpi("Rank", rank.top <= 50 ? `Top ${rank.top}%` : `Bottom ${Math.max(1, 100 - rank.top + 1)}%`, `Among ${formatNumber(rank.n)} ${rank.group} for ${concept}.`) : ""}
   </div>`;
   let verdict = "";
   if (areaProps) {
     const { strengths, watch } = whyReasons(areaProps);
-    const good = strengths[0]?.line, bad = watch[0]?.line;
-    const dot = (t) => (t && !/[.!?]$/.test(t) ? `${t}.` : t);
-    verdict = `<p class="verdict"><b>${escapeHtml(rank.text)} for ${escapeHtml(concept)}.</b> ${escapeHtml([dot(good), bad && dot(`Watch out: ${bad.charAt(0).toLowerCase()}${bad.slice(1)}`)].filter(Boolean).join(" "))}</p>`;
+    const n = (k, w) => `${k} ${w}${k === 1 ? "" : "s"}`;
+    verdict = `<p class="verdict"><b>${escapeHtml(rank.text)} for ${escapeHtml(concept)}.</b> <span class="verdict__sub">${escapeHtml(`${n(strengths.length, "strength")}, ${n(watch.length, "watch-out")} — see Why below. Location only; price not included.`)}</span></p>`;
   }
   const outlier = listingOutlier(props);
   const tenantEv = state.tenant ? state.tenantEval?.get(props.id) : null;
@@ -1689,7 +1784,7 @@ function listingModalContent(props) {
     </div>
     <nav class="lnav" role="tablist" aria-label="Card sections">
       ${tab("sec-why", "Why", true)}
-      ${tenantEv ? tab("sec-tenant", escapeHtml(state.tenant.name.split(/[ ·]/)[0])) : ""}
+      ${tenantEv ? tab("sec-tenant", escapeHtml(state.tenant.name)) : ""}
       ${dm ? tab("sec-deal", "Calculator") : ""}
       ${tab("sec-details", "Details")}
     </nav>
@@ -1703,13 +1798,13 @@ function listingModalContent(props) {
 function listingDetailsTabHtml(props) {
   const inv = props.inv && typeof props.inv === "object" ? props.inv : {};
   const parts = [];
-  if (Object.keys(inv).length) {
-    parts.push(investorFieldsHtml({ ...props, inv }));
-    parts.push(listingFeaturesHtml(inv));
-    parts.push(listingActivityHtml(inv));
-  }
   const desc = listingDescToggleHtml({ ...props, inv });
   if (desc) parts.push(desc);
+  if (Object.keys(inv).length) {
+    parts.push(listingFeaturesHtml(inv));
+    parts.push(investorFieldsHtml({ ...props, inv }));
+    parts.push(listingActivityHtml(inv));
+  }
   const body = parts.filter((h) => /<(dd|li|div class="listing-desc)/.test(h || "")).join("");
   if (!body) {
     return `<div class="empty-state"><b>No premises details for this listing</b><p>Idealista didn't publish characteristics or a description for it, or it hasn't been scraped in full yet.</p>${idealistaLink(props.u, "Check the ad on Idealista")}</div>`;
@@ -1953,6 +2048,67 @@ function bandScore(value, low, high, cap) {
   return Math.max(0, 1 - (value - high) / high);
 }
 
+function geometryAreaKm2(geometry) {
+  const ringArea = (ring) => {
+    const lat0 = (ring.reduce((s, c) => s + c[1], 0) / ring.length) * Math.PI / 180;
+    const kx = 111.32 * Math.cos(lat0), ky = 110.57;
+    let a = 0;
+    for (let i = 0, j = ring.length - 1; i < ring.length; j = i++) a += (ring[j][0] * kx) * (ring[i][1] * ky) - (ring[i][0] * kx) * (ring[j][1] * ky);
+    return Math.abs(a / 2);
+  };
+  if (geometry.type === "Polygon") return ringArea(geometry.coordinates[0]);
+  if (geometry.type === "MultiPolygon") return geometry.coordinates.reduce((s, poly) => s + ringArea(poly[0]), 0);
+  return 0;
+}
+
+/* Reference distribution for the walk factors: the same counts, per km², inside a 700 m circle
+ * (≈ a 10-minute walk) around every for-sale/for-rent listing in the city (sampled to ≤400 points).
+ * Each walk is then placed as a percentile against these, instead of fixed thresholds that saturated
+ * at 0 or 100 in dense Madrid/Barcelona streets. Cached per city + business type. */
+const walkRefCache = new Map();
+let placeGrid = null;
+const GRID = 0.01;
+function walkReference(city, kind) {
+  const key = `${city}|${kind}`;
+  if (walkRefCache.has(key)) return walkRefCache.get(key);
+  if (!placeGrid) {
+    placeGrid = new Map();
+    for (const row of state.places || []) {
+      const k = `${Math.floor(row[0] / GRID)},${Math.floor(row[1] / GRID)}`;
+      (placeGrid.get(k) || placeGrid.set(k, []).get(k)).push(row);
+    }
+  }
+  const profile = PROFILES[kind] || PROFILES.bakery;
+  const comp = new Set(profile.complements || []);
+  const R = 700, areaKm2 = Math.PI * 0.7 * 0.7;
+  const pts = (state.listings || []).filter((f) => cityOfId(f.properties.i) === city && f.geometry?.coordinates).map((f) => f.geometry.coordinates);
+  const step = Math.max(1, Math.floor(pts.length / 400));
+  const out = { open: [], match: [], pal: [], vac: [] };
+  for (let n = 0; n < pts.length; n += step) {
+    const [lon, lat] = pts[n];
+    const gx = Math.floor(lon / GRID), gy = Math.floor(lat / GRID);
+    let open = 0, vac = 0, closed = 0, match = 0, pal = 0;
+    for (let dx = -1; dx <= 1; dx++) for (let dy = -1; dy <= 1; dy++) {
+      for (const row of placeGrid.get(`${gx + dx},${gy + dy}`) || []) {
+        const d = haversineMeters(lon, lat, row[0], row[1]);
+        if (d > R) continue;
+        if (row[3] === "V") { vac += 1; continue; }
+        if (row[3] === "C") { closed += 1; continue; }
+        if (row[3] !== "O") continue;
+        open += 1;
+        const near = 1 / (1 + d / 280);
+        const g = CODE_TO_GROUP[row[2]];
+        if (g === kind) match += near; else if (comp.has(g)) pal += near;
+      }
+    }
+    const alive = open >= profile.walk.openLow * 0.7;
+    out.open.push(open / areaKm2); out.match.push(match / areaKm2); out.pal.push(pal / areaKm2); out.vac.push((alive ? vac : vac + closed) / areaKm2);
+  }
+  Object.values(out).forEach((a) => a.sort((x, y) => x - y));
+  walkRefCache.set(key, out);
+  return out;
+}
+
 function scoreWalk(lon, lat, feature) {
   const query = state.query;
   const profile = PROFILES[query.id] || PROFILES.bakery;
@@ -1992,20 +2148,39 @@ function scoreWalk(lon, lat, feature) {
       palW += near;
     }
   }
-  const trade = bandScore(open, target.openLow, target.openHigh, profile.crowd < 0.5);
-  const gap = bandScore(matchW, target.matchLow, target.matchHigh, true);
-  const pals = Math.min(1, palW / target.palTarget);
+  const areaKm2 = Math.max(0.05, geometryAreaKm2(feature.geometry));
   const alive = open >= target.openLow * 0.7;
-  const doors = alive ? Math.min(1, vacant / 8) : Math.max(0, 1 - (vacant + closed) / 30);
+  const city = lat > 41 ? "Barcelona" : "Madrid";
+  const ref = walkReference(city, query.id);
+  const pct = (key, v) => {
+    const arr = ref[key], x = v / areaKm2;
+    if (!arr.length) return 50;
+    let lt = 0, eq = 0;
+    for (const r of arr) { if (r < x) lt += 1; else if (r === x) eq += 1; else break; }
+    return Math.max(1, Math.min(99, Math.round((100 * (lt + eq / 2)) / arr.length)));
+  };
+  const pOpen = pct("open", open), pMatch = pct("match", matchW), pPal = pct("pal", palW), pVac = pct("vac", alive ? vacant : vacant + closed);
+  const crowdCap = profile.crowd < 0.5;
+  const shape = {
+    up: (q) => q,
+    down: (q) => 1 - q,
+    mid: (q) => (q <= 0.6 ? 0.55 + q * 0.7 : Math.max(0.1, 0.97 - (q - 0.6) * 2.2)),
+  };
+  const tradeDir = crowdCap ? "mid" : "up";
+  const doorsDir = alive ? "mid" : "down";
+  const trade = shape[tradeDir](pOpen / 100);
+  const gap = shape.down(pMatch / 100);
+  const pals = shape.up(pPal / 100);
+  const doors = shape[doorsDir](pVac / 100);
   const parts = [
-    { label: "Shops in the walk", detail: `${formatNumber(open)} open premises`, score: Math.round(trade * 100), weight: profile.signals.street, value: trade, line: `${formatNumber(open)} open premises inside the walk` },
-    { label: "Competitors in the walk", detail: `${formatNumber(matchN)} ${plural(query.label, matchN)}, closer ones count more`, score: Math.round(gap * 100), weight: profile.signals.gap, value: gap, line: `${formatNumber(matchN)} ${plural(query.label, matchN)} inside the walk. Closer ones count more.` },
-    { label: "Complements in the walk", detail: `${formatNumber(palN)} complementary shops`, score: Math.round(pals * 100), weight: profile.signals.pals, value: pals, line: `${formatNumber(palN)} complementary shops inside the walk` },
-    { label: "Empty doors in the walk", detail: alive ? `${formatNumber(vacant)} empty doors on a trading street` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street`, score: Math.round(doors * 100), weight: 0.4, value: doors, line: alive ? `${formatNumber(vacant)} empty doors where the street is already trading` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street` },
+    { label: "Shops in the walk", pct: pOpen, dir: tradeDir, tip: crowdCap ? "Open premises inside the walk, per km². For this business a lively-but-not-packed street is best." : "Open premises inside the walk, per km² — more shops means more people walking past.", detail: `${formatNumber(open)} open premises`, score: Math.round(trade * 100), weight: profile.signals.street, value: trade, line: `${formatNumber(open)} open premises inside the walk` },
+    { label: "Competitors in the walk", pct: pMatch, dir: "down", tip: "Same-type businesses inside the walk, per km². Closer ones count more. Fewer is better.", detail: `${formatNumber(matchN)} ${plural(query.label, matchN)}, closer ones count more`, score: Math.round(gap * 100), weight: profile.signals.gap, value: gap, line: `${formatNumber(matchN)} ${plural(query.label, matchN)} inside the walk. Closer ones count more.` },
+    { label: "Complements in the walk", pct: pPal, dir: "up", tip: "Shops that bring the same customers, inside the walk, per km². More is better.", detail: `${formatNumber(palN)} complementary shops`, score: Math.round(pals * 100), weight: profile.signals.pals, value: pals, line: `${formatNumber(palN)} complementary shops inside the walk` },
+    { label: "Empty doors in the walk", pct: pVac, dir: doorsDir, tip: alive ? "Vacant premises inside the walk, per km². On a trading street a moderate number is good (room to open); very many is a warning." : "Empty or closed doors on a thin street — fewer is better.", detail: alive ? `${formatNumber(vacant)} empty doors on a trading street` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street`, score: Math.round(doors * 100), weight: 0.4, value: doors, line: alive ? `${formatNumber(vacant)} empty doors where the street is already trading` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street` },
   ];
   const weight = parts.reduce((sum, part) => sum + part.weight, 0);
   const score = weight ? Math.round((parts.reduce((sum, part) => sum + part.weight * part.value, 0) / weight) * 100) : 0;
-  return { score, parts, open, matchN };
+  return { score, parts, open, matchN, city };
 }
 
 function showCatchment(lon, lat) {

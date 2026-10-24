@@ -49,13 +49,15 @@
         </div>
       </div>
 
-      <label class="tenant-pick">
-        <span class="field-label">Tenant</span>
-        <select id="tenant-select" class="tenant-select">
-          <option value="">Any tenant (score by business type)</option>
-          <option value="aldi">Aldi · supermarket</option>
-        </select>
-      </label>
+      <div class="tpick" id="tenant-pick">
+        <span class="field-label" id="tenant-label">Tenant</span>
+        <button type="button" class="picker-button tpick__btn" id="tenant-btn" aria-labelledby="tenant-label tenant-value" aria-haspopup="listbox" aria-expanded="false" aria-controls="tenant-menu">
+          <span class="tpick__val" id="tenant-value"></span>
+          <svg class="picker-chevron" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg>
+        </button>
+        <div class="picker-menu tpick__menu" id="tenant-menu" role="listbox" hidden></div>
+      </div>
+      <p class="business-implied unit-note" id="business-implied" hidden></p>
       <p class="tenant-note unit-note" id="tenant-note" hidden></p>
 
       <div class="jump-row" id="jump-row">

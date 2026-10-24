@@ -2180,3 +2180,48 @@ body.has-modal {
 .pfact__l { color: var(--muted); }
 .pfact__v { color: var(--ink); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
 .pfact__v a { color: inherit; }
+
+/* ---- Round 11 ---- */
+@media (min-width: 720px) { .reasons { grid-template-columns: 1fr 1fr; column-gap: 24px; } }
+.lfit__hint { margin: 4px 0 0; font-size: 12px; color: var(--muted); letter-spacing: .01em; }
+.wv__track--mid { background: linear-gradient(90deg, #cfe3bf, #9fd0a4 40%, #efd59a 72%, #e9a191); }
+.wv-list--walk { margin-top: 8px; }
+@media (min-width: 720px) { .wv-list--walk { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 28px; } }
+.pchips__more { display: contents; }
+.pchips__more > summary { display: inline-flex; align-items: center; padding: 4px 10px; border: 1px dashed var(--line); border-radius: 999px; font-size: 12.5px; color: var(--muted); cursor: pointer; list-style: none; }
+.pchips__more > summary::-webkit-details-marker { display: none; }
+.pchips__more[open] > summary { display: none; }
+.pchips__more > .pchips { flex-basis: 100%; }
+.leave-confirm { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 8px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 10px; background: #fffdf8; font-size: 13px; box-shadow: 0 4px 14px rgba(29,25,21,.08); }
+.leave-confirm[hidden] { display: none; }
+.leave-confirm span { flex: 1 1 200px; }
+.leave-confirm button { padding: 5px 12px; border-radius: 8px; border: 1px solid var(--line); background: #fff; font: inherit; cursor: pointer; }
+.leave-confirm__go { background: var(--ink) !important; color: #fff; border-color: var(--ink) !important; }
+/* tenant picker */
+.tpick { position: relative; display: grid; gap: 6px; }
+.tpick__btn { display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; text-align: left; }
+.tpick__val, .tpick__opt { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.tpick__menu { position: absolute; top: 100%; left: 0; right: 0; z-index: 30; margin-top: 4px; max-height: 360px; overflow: auto; background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 4px; box-shadow: 0 10px 30px rgba(29,25,21,.14); }
+.tpick__opt { width: 100%; padding: 7px 8px; border: 0; border-radius: 8px; background: none; font: inherit; text-align: left; cursor: pointer; }
+.tpick__opt:hover, .tpick__opt:focus-visible, .tpick__opt.is-on { background: rgba(29,25,21,.05); }
+.tpick__txt { display: grid; min-width: 0; line-height: 1.25; }
+.tpick__txt b { font-weight: 600; font-size: 14px; }
+.tpick__txt small { color: var(--muted); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tlogo { flex: none; display: grid; place-items: center; width: 30px; height: 30px; border-radius: 8px; background: var(--tc, #6b625a); color: #fff; font-size: 11.5px; font-weight: 700; letter-spacing: .02em; }
+.tlogo--any { background: #efe9e1; color: var(--muted); font-size: 15px; }
+.business-implied { margin: -2px 0 0; font-size: 13px; }
+.business-implied span { color: var(--muted); }
+/* calculator financing */
+.deal-lev { margin: 14px 0 4px; padding: 12px; border: 1px solid var(--line); border-radius: 12px; }
+.deal-switch { display: flex; align-items: center; gap: 10px; cursor: pointer; font-size: 14px; font-weight: 500; }
+.deal-switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.deal-switch__ui { flex: none; width: 34px; height: 20px; border-radius: 999px; background: #d9d1c6; position: relative; transition: background .15s; }
+.deal-switch__ui::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: #fff; box-shadow: 0 1px 2px rgba(0,0,0,.25); transition: transform .15s; }
+.deal-switch input:checked + .deal-switch__ui { background: var(--ink); }
+.deal-switch input:checked + .deal-switch__ui::after { transform: translateX(14px); }
+.deal-switch input:focus-visible + .deal-switch__ui { outline: 2px solid var(--ink); outline-offset: 2px; }
+.deal-grid--lev { margin-top: 10px; }
+.deal-grid--lev[hidden] { display: none; }
+.deal-kpis--lev { margin-top: 10px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.lkpi__sub { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.verdict__sub { color: var(--muted); font-size: 14px; }

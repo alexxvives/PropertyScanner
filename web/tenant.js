@@ -12,6 +12,26 @@ const SRC_ALDI_2018 = {
   label: "El Español, 1 Jun 2018 (press, not on Aldi's current page)",
 };
 
+const SRC_LIDL = { url: "https://www.expansion-lidl.es/", label: "expansion-lidl.es · Lidl expansion portal (no size sheet)" };
+const SRC_LIDL_PRESS = { url: "https://www.expansion.com/empresas/distribucion/2021/09/23/614b0ffde5fdde0b3c8b4598.html", label: "Expansión, 23 Sep 2021 · El Español 2016 (press)" };
+const SRC_LIDL_2026 = { url: "https://www.alimarket.es/alimentacion/noticia/", label: "Alimarket, recent Lidl openings (press, Oct 2026)" };
+const SRC_MERC_ROIG = { url: "https://www.larazon.es/economia/", label: "La Razón, 11 Mar 2026 · Juan Roig's 5 keys (press)" };
+const SRC_MERC_SIZE = { url: "https://blckrckt.com/", label: "blckrckt.com from Alimarket data · 2025 average opening (press)" };
+const SRC_BF = { url: "https://www.basic-fit.com/es-es/expansion", label: "basic-fit.com · Expansión (official)" };
+const SRC_BF_TYPES = { url: "https://corporate.basic-fit.com/es/real-estate/property-types", label: "corporate.basic-fit.com · Property types (official)" };
+const SRC_VIVA = { url: "https://cincodias.elpais.com/cincodias/2019/07/18/companias/1563464958_946379.html", label: "Cinco Días, 18 Jul 2019 (press)" };
+const SRC_VIVA_2023 = { url: "https://www.2playbook.com/", label: "2Playbook, 2023 openings (press)" };
+const SRC_5G = { url: "https://fiveguys.com/wp-content/uploads/2025/07/Five-Guys-Preferred-Site-Criteria.pdf", label: "Five Guys Preferred Site Criteria (official PDF, 2025)" };
+const SRC_5G_ES = { url: "https://www.linkedin.com/company/five-guys-spain/", label: "Five Guys Spain on LinkedIn (links the PDF)" };
+const SRC_DEC = { url: "https://cincodias.elpais.com/", label: "Cinco Días, 16 Mar 2026 · Decathlon City (press)" };
+
+function sizeCheck(min, src, verified, note) {
+  return { id: "size", ask: "What is the gross built area (m²)?", label: `Gross area ≥ ${min.toLocaleString("en-US")} m²`, src, verified, note, test: (l) => (l.sz ? l.sz >= min : null), value: (l) => (l.sz ? `${l.sz.toLocaleString("es-ES")} m²` : "size not listed") };
+}
+function groundCheck(src, verified, note) {
+  return { id: "ground", ask: "Is the premises on the ground floor with its own street entrance?", label: "Ground floor, street entrance", src, verified, note, test: (l, inv) => ((inv.floor || "").startsWith("Ground") || inv.location_type === "Street level" ? true : inv.floor || inv.location_type ? false : null), value: (l, inv) => inv.location_type || inv.floor || "position not listed" };
+}
+
 const TENANTS = {
   aldi: {
     id: "aldi",
@@ -19,6 +39,8 @@ const TENANTS = {
     concept: "grocery",
     retail: true,
     contact: "expansion@aldi.es",
+    short: "Supermarket · 1,000+ m²", color: "#00005f", initials: "AL",
+    size: { min: 1000, lo: 1500, hi: 2000, max: 4000 },
     blurb: "Discount supermarket. Smallest published format: urban store from 1,000 m² gross; mall / retail-park stores 1,500–2,000 m² with 20–30 m frontage.",
     sources: [SRC_ALDI, SRC_ALDI_2018],
     hard: [
@@ -65,6 +87,124 @@ const TENANTS = {
       { id: "onefloor", label: "Single floor", w: 0.1, src: SRC_ALDI_2018, verified: false, note: "'preferiblemente de una sola planta' (2018 press)" },
     ],
   },
+
+  lidl: {
+    id: "lidl", name: "Lidl", concept: "grocery", retail: true,
+    short: "Supermarket · 1,100+ m²", color: "#0050aa", initials: "LI",
+    contact: "", contactUrl: "https://www.expansion-lidl.es/",
+    blurb: "Discount supermarket. Lidl publishes no size sheet; its expansion portal takes both plots and premises. Press: ground-floor premises from ~1,100 m² in big cities, typically 1,200–1,800 m² with parking.",
+    size: { min: 1100, lo: 1200, hi: 1800, max: 4000 },
+    sources: [SRC_LIDL, SRC_LIDL_PRESS],
+    hard: [
+      sizeCheck(1100, SRC_LIDL_PRESS, false, "Press: urban ground-floor premises from ~1,100 m²; 1,800 m² premises and 4,000 m² plots typical (Expansión 2021)."),
+      groundCheck(SRC_LIDL_PRESS, false, "Press: 'locales comerciales en planta baja'."),
+      { id: "parking", ask: "How many parking spaces come with or are next to the premises?", label: "Parking (recent stores 70–120 spaces)", src: SRC_LIDL_2026, verified: false, note: "Recent Spanish openings (Alimarket). City-centre stores such as Madrid San Bernardo have none.", test: () => null, value: () => "not in Idealista data" },
+      { id: "loading", ask: "Is there a loading/unloading bay or legal loading access for trucks?", label: "Loading / unloading access", src: null, verified: false, note: "Inferred: every supermarket needs truck deliveries.", test: () => null, value: () => "not in Idealista data" },
+    ],
+    soft: [
+      { id: "residents", label: "Residents per km²", w: 0.3, src: null, verified: false, note: "neighbourhood shop" },
+      { id: "traffic", label: "Vehicle traffic (measured veh/h)", w: 0.2, src: SRC_LIDL_2026, verified: false, note: "drive-to, parking" },
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.15, src: null, verified: false, note: "inference" },
+      { id: "sizefit", label: "Size near 1,200–1,800 m²", w: 0.25, src: SRC_LIDL_PRESS, verified: false, note: "press" },
+      { id: "street", label: "Street level, ground floor", w: 0.1, src: SRC_LIDL_PRESS, verified: false, note: "press" },
+    ],
+  },
+  mercadona: {
+    id: "mercadona", name: "Mercadona", concept: "grocery", retail: true,
+    short: "Supermarket · ~1,700 m²", color: "#0a8a3a", initials: "ME",
+    contact: "", contactUrl: "https://info.mercadona.es/es/conoce-mercadona/proveedores",
+    blurb: "Spain's largest supermarket. Mercadona publishes no site requirements. Juan Roig's five keys (Mar 2026): car access & parking, loading without disturbing neighbours, room for the full ~8,000-product range, staff changing rooms, profitability. 2025 openings averaged ~1,740 m² of sales floor.",
+    size: { min: 1300, lo: 1500, hi: 2200, max: 4000 },
+    sources: [SRC_MERC_ROIG, SRC_MERC_SIZE],
+    hard: [
+      sizeCheck(1300, SRC_MERC_SIZE, false, "No official minimum. 2025 openings averaged ~1,740 m² sales floor (Alimarket data), so ~1,300 m² gross is a practical floor."),
+      { id: "parking", ask: "How many parking spaces come with or are next to the premises?", label: "Car access and parking", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
+      { id: "loading", ask: "Can trucks load/unload without blocking the street or disturbing neighbours?", label: "Loading without disturbing neighbours", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
+      { id: "staff", ask: "Is there space for staff changing rooms and a back office?", label: "Room for staff changing rooms", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
+    ],
+    soft: [
+      { id: "residents", label: "Residents per km²", w: 0.35, src: null, verified: false, note: "neighbourhood shop" },
+      { id: "traffic", label: "Vehicle traffic (measured veh/h)", w: 0.2, src: SRC_MERC_ROIG, verified: false, note: "car access" },
+      { id: "sizefit", label: "Size near 1,500–2,200 m²", w: 0.3, src: SRC_MERC_SIZE, verified: false, note: "2025 average" },
+      { id: "street", label: "Street level, ground floor", w: 0.15, src: null, verified: false, note: "inference" },
+    ],
+  },
+  basicfit: {
+    id: "basicfit", name: "Basic-Fit", concept: "gym", retail: true,
+    short: "Gym · 800–2,500 m²", color: "#ff7900", initials: "BF",
+    contact: "", contactUrl: "https://www.basic-fit.com/es-es/expansion",
+    blurb: "Budget gym chain. Official: 800–2,500 m² with good visibility; city-centre clubs 900–2,000 m², often near public transport, no parking needed.",
+    size: { min: 800, lo: 1200, hi: 1500, max: 3000 },
+    sources: [SRC_BF, SRC_BF_TYPES],
+    hard: [
+      { id: "size", ask: "What is the gross built area (m²)?", label: "Area 800–2,500 m²", src: SRC_BF, verified: true, note: "basic-fit.com expansion page: 800–2.500 m². Most clubs 1,200–1,500 m²; up to 3,000 m².", test: (l) => (l.sz ? l.sz >= 800 && l.sz <= 3000 : null), value: (l) => (l.sz ? `${l.sz.toLocaleString("es-ES")} m²` : "size not listed") },
+      { id: "visibility", ask: "Is the premises visible from the street, with room for signage?", label: "Good visibility / branding", src: SRC_BF_TYPES, verified: true, note: "'visibility and branding opportunities are preferred'. Approximated as street level.", test: (l, inv) => (inv.location_type === "Street level" || (inv.floor || "").startsWith("Ground") ? true : null), value: (l, inv) => inv.location_type || inv.floor || "position not listed" },
+      { id: "height", ask: "What is the clear ceiling height (altura libre) in metres?", label: "Ceiling height (ask)", src: null, verified: false, note: "Not published; gyms usually need ~3 m+. Inference.", test: () => null, value: () => "not in Idealista data" },
+    ],
+    soft: [
+      { id: "transit", label: "Near public transport", w: 0.3, src: SRC_BF_TYPES, verified: true, note: "'often located near public transport'" },
+      { id: "residents", label: "Residents per km²", w: 0.3, src: null, verified: false, note: "members live nearby" },
+      { id: "sizefit", label: "Size near 1,200–1,500 m²", w: 0.25, src: SRC_BF_TYPES, verified: true, note: "'most clubs'" },
+      { id: "street", label: "Street level, ground floor", w: 0.15, src: SRC_BF_TYPES, verified: true, note: "visibility" },
+    ],
+  },
+  vivagym: {
+    id: "vivagym", name: "VivaGym", concept: "gym", retail: true,
+    short: "Gym · ~1,000–1,900 m²", color: "#e4002b", initials: "VG",
+    contact: "", contactUrl: "https://vivagym.es/",
+    blurb: "Spanish budget gym chain. No published requirements; press reports clubs averaging ~1,800 m², with recent openings of 1,000–1,900 m².",
+    size: { min: 1000, lo: 1400, hi: 1900, max: 3000 },
+    sources: [SRC_VIVA, SRC_VIVA_2023],
+    hard: [
+      sizeCheck(1000, SRC_VIVA_2023, false, "Press only: 2023 openings of 1,000 and 1,900 m²; average ~1,800 m² (Cinco Días 2019)."),
+      { id: "height", ask: "What is the clear ceiling height (altura libre) in metres?", label: "Ceiling height (ask)", src: null, verified: false, note: "Not published. Inference.", test: () => null, value: () => "not in Idealista data" },
+    ],
+    soft: [
+      { id: "residents", label: "Residents per km²", w: 0.35, src: null, verified: false, note: "inference" },
+      { id: "transit", label: "Near public transport", w: 0.25, src: null, verified: false, note: "inference" },
+      { id: "sizefit", label: "Size near 1,400–1,900 m²", w: 0.3, src: SRC_VIVA, verified: false, note: "press" },
+      { id: "income", label: "Disposable income", w: 0.1, src: null, verified: false, note: "inference" },
+    ],
+  },
+  fiveguys: {
+    id: "fiveguys", name: "Five Guys", concept: "food", retail: true,
+    short: "Burgers · 190–280 m²", color: "#c8102e", initials: "5G",
+    contact: "", contactUrl: SRC_5G.url,
+    blurb: "Fast-casual burgers. Official site criteria: 2,000–3,000 sq ft (≈186–279 m², ideal ≈232 m²), ≥32 ft (≈9.8 m) frontage, corner or end-cap, 11'6\" (≈3.5 m) ceiling, 35 parking spaces unless the area is high-footfall. Spanish units are 215–300 m².",
+    size: { min: 186, lo: 215, hi: 280, max: 400 },
+    sources: [SRC_5G, SRC_5G_ES],
+    hard: [
+      { id: "size", ask: "What is the gross built area (m²)?", label: "Area ≈186–280 m² (2,000–3,000 sq ft)", src: SRC_5G, verified: true, note: "Ideal 2,500 sq ft. Spanish examples 215–300 m², so up to ~320 m² passes.", test: (l) => (l.sz ? l.sz >= 180 && l.sz <= 320 : null), value: (l) => (l.sz ? `${l.sz.toLocaleString("es-ES")} m²` : "size not listed") },
+      { id: "facade", ask: "What is the street frontage in linear metres?", label: "Frontage ≥ 9.8 m (32 ft)", minFacade: 9.75, src: SRC_5G, verified: true, note: "Minimum 32 ft of frontage.", test: (l, inv) => (Number.isFinite(inv.facade_m) && inv.facade_m > 0 ? inv.facade_m >= 9.75 : inv.facade_band === "> 12 m" ? true : null), value: (l, inv) => (inv.facade_m ? `${inv.facade_m} m` : inv.facade_band || "not listed") },
+      { id: "corner", ask: "Is it a corner or end-of-row unit?", label: "Corner or end-cap unit", src: SRC_5G, verified: true, note: "Preferred site criteria.", test: (l, inv) => (inv.corner === true ? true : null), value: (l, inv) => (inv.corner ? "corner unit" : "not stated") },
+      { id: "smoke", ask: "Is there a smoke extraction outlet (salida de humos) to roof level?", label: "Smoke outlet (salida de humos)", src: null, verified: false, note: "Inferred: a grill kitchen needs one under Spanish licensing.", test: (l, inv) => (inv.smoke === true ? true : null), value: (l, inv) => (inv.smoke ? "smoke outlet listed" : "not stated") },
+      { id: "height", ask: "What is the clear ceiling height (altura libre) in metres?", label: "Ceiling ≥ 3.5 m (11'6\")", src: SRC_5G, verified: true, note: "Preferred site criteria.", test: () => null, value: () => "not in Idealista data" },
+    ],
+    soft: [
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.4, src: SRC_5G, verified: true, note: "high-pedestrian areas need no parking" },
+      { id: "sizefit", label: "Size near 215–280 m²", w: 0.25, src: SRC_5G, verified: true, note: "ideal 2,500 sq ft" },
+      { id: "street", label: "Street level, ground floor", w: 0.2, src: SRC_5G, verified: true, note: "frontage" },
+      { id: "transit", label: "Near public transport", w: 0.15, src: null, verified: false, note: "inference" },
+    ],
+  },
+  decathloncity: {
+    id: "decathloncity", name: "Decathlon City", concept: "fashion", retail: true,
+    short: "Sports retail · ~500–900 m²", color: "#3643ba", initials: "DC",
+    contact: "", contactUrl: "https://www.decathlon.es/",
+    blurb: "Decathlon's city-centre format. No published requirements; press: City stores are typically ~500 m² in central streets (27 in Spain), with examples of 780 and 855 m². Mapped to the Clothing business type.",
+    size: { min: 400, lo: 500, hi: 900, max: 1500 },
+    sources: [SRC_DEC],
+    hard: [
+      sizeCheck(400, SRC_DEC, false, "Press only: City format ~500 m²; examples 780–855 m²."),
+      groundCheck(SRC_DEC, false, "Press: high-street city-centre premises. Inference."),
+    ],
+    soft: [
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.4, src: SRC_DEC, verified: false, note: "city-centre format" },
+      { id: "transit", label: "Near public transport", w: 0.2, src: null, verified: false, note: "inference" },
+      { id: "sizefit", label: "Size near 500–900 m²", w: 0.25, src: SRC_DEC, verified: false, note: "press" },
+      { id: "street", label: "Street level, ground floor", w: 0.15, src: null, verified: false, note: "inference" },
+    ],
+  },
 };
 
 /* ---- Ad-text scan + on-site checklist (round 8) ---- */
@@ -107,11 +247,11 @@ const AD_SCANS = {
     const h = num(m[2]);
     return h > 1.8 && h < 30 ? { result: h > 3.5, quote: m[0].trim(), shown: `${h} m (from ad)` } : null;
   },
-  facade: (t) => {
+  facade: (t, h) => {
     const m = t.match(/(fachada|fa[cç]ana|frontage|façade)[^0-9\n]{0,20}(\d{1,3}(?:[.,]\d{1,2})?)\s*(m|metros|ml|meters)\b/i);
     if (!m) return null;
     const f = num(m[2]);
-    return f > 1 && f < 300 ? { result: f >= 20, quote: m[0].trim(), shown: `${f} m (from ad)` } : null;
+    return f > 1 && f < 300 ? { result: f >= (h?.minFacade || 20), quote: m[0].trim(), shown: `${f} m (from ad)` } : null;
   },
 };
 
@@ -148,7 +288,9 @@ function evaluateTenant(tenant, listings, areaById) {
   for (const f of listings) {
     const p = f.properties;
     const a = areaById?.get(p.i)?.properties || {};
-    (byCity[p.m] ||= { foot: [], traffic: [], residents: [] });
+    (byCity[p.m] ||= { foot: [], traffic: [], residents: [], transit: [], income: [] });
+    byCity[p.m].transit.push(typeof transitValue === "function" ? transitValue(a) : null);
+    byCity[p.m].income.push(a.income_eur);
     byCity[p.m].foot.push(a.open_per_km2);
     byCity[p.m].traffic.push(a.traffic_veh_h);
     byCity[p.m].residents.push(a.pop_per_km2);
@@ -164,19 +306,22 @@ function evaluateTenant(tenant, listings, areaById) {
       let result = h.test(p, inv, a), shown = h.value(p, inv, a), from = result == null ? "none" : "data", quote = "";
       if (result == null && AD_SCANS[h.id]) {
         adText ??= listingAdText(p);
-        const hit = AD_SCANS[h.id](adText);
+        const hit = AD_SCANS[h.id](adText, h);
         if (hit) { result = hit.result; from = "ad"; quote = hit.quote; if (hit.shown) shown = hit.shown; }
       }
       if (h.id in mine) { result = mine[h.id]; from = "you"; }
       return { ...h, result, shown, from, quote };
     });
-    const c = byCity[p.m] || { foot: [], traffic: [], residents: [] };
+    const c = byCity[p.m] || { foot: [], traffic: [], residents: [], transit: [], income: [] };
+    const z = tenant.size || { min: 1000, lo: 1500, hi: 2000, max: 4000 };
     const sz = p.sz || 0;
     const parts = {
       foot: tenantPct(c.foot, a.open_per_km2),
       traffic: tenantPct(c.traffic, a.traffic_veh_h),
       residents: tenantPct(c.residents, a.pop_per_km2),
-      sizefit: sz >= 1500 && sz <= 2000 ? 1 : sz >= 1000 && sz <= 4000 ? 0.7 : sz >= 800 ? 0.35 : Math.min(0.3, sz / 2700),
+      transit: tenantPct(c.transit, typeof transitValue === "function" ? transitValue(a) : null),
+      income: tenantPct(c.income, a.income_eur),
+      sizefit: sz >= z.lo && sz <= z.hi ? 1 : sz >= z.min && sz <= z.max ? 0.7 : sz >= z.min * 0.8 && sz <= z.max * 1.3 ? 0.35 : Math.min(0.3, sz / (z.lo * 1.8)),
       street: (inv.floor || "").startsWith("Ground") || inv.location_type === "Street level" ? 1 : inv.floor || inv.location_type ? 0.2 : 0.5,
       onefloor: inv.floors_in_unit === 1 ? 1 : inv.floors_in_unit > 1 ? 0.3 : 0.5,
     };
@@ -210,7 +355,7 @@ function tenantChecksHtml(tenant, ev, listingId) {
   return `<section class="card-section tenant-fit" data-tenant-listing="${escapeHtml(listingId || "")}">
     <h3 class="card-section__title">Tenant fit · ${escapeHtml(tenant.name)} <span class="tenant-verdict ${ev.fail ? "is-fail" : "is-ok"}">${escapeHtml(verdict)}</span></h3>
     ${ev.excluded ? `<p class="tenant-excl">⚠ ${escapeHtml(ev.excluded)} — hidden from the ${escapeHtml(tenant.name)} ranking by default.</p>` : ""}
-    <p class="unit-note">${escapeHtml(tenant.blurb)} Contact: <a href="mailto:${tenant.contact}">${tenant.contact}</a></p>
+    <p class="unit-note">${escapeHtml(tenant.blurb)} ${tenant.contact ? `Contact: <a href="mailto:${tenant.contact}">${tenant.contact}</a>` : tenant.contactUrl ? `Contact: <a href="${escapeHtml(tenant.contactUrl)}" target="_blank" rel="noopener">expansion page</a>` : ""}</p>
     <p class="unit-note">Tap Pass / Fail / ? to record what you checked on site. Answers stay in this browser and override the data and the ad text.</p>
     <ul class="tenant-checks">${rows}</ul>
     ${qs}

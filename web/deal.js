@@ -12,6 +12,12 @@ const DEAL_DEFAULTS = {
   vacancyPct: 5, // % of gross rent
   opexPct: 8, // % of gross rent (IBI, insurance, community, management)
   compRadiusM: 800,
+  // Financing defaults. Source: Globalcaja (Caja Rural) pre-contract sheet "Hipoteca adquisición/reforma locales",
+  // Sept 2026: max 60% of appraisal, 20 years, 3.95% year 1 then Euribor (2.954%, BOE 02/09/2026) + 1.50–2.70 pp,
+  // APR (TAE) 5.88% without bundled products. BBVA "Hipoteca Negocios": up to 70% LTV. → 60% LTV, 5.5%, 20 yrs.
+  ltvPct: 60,
+  ratePct: 5.5,
+  termYrs: 20,
   minComps: 3,
 };
 
@@ -96,6 +102,10 @@ function dealInputs(props, coords, listings) {
     capex: DEAL_DEFAULTS.capex,
     vacancyPct: DEAL_DEFAULTS.vacancyPct,
     opexPct: DEAL_DEFAULTS.opexPct,
+    lev: 0,
+    ltvPct: DEAL_DEFAULTS.ltvPct,
+    ratePct: DEAL_DEFAULTS.ratePct,
+    termYrs: DEAL_DEFAULTS.termYrs,
     region,
   };
 }
@@ -112,6 +122,25 @@ function dealMath(i) {
     grossYield: i.price ? (grossRent / i.price) * 100 : null,
     netYield: totalCost ? (netRent / totalCost) * 100 : null,
     payback: netRent > 0 ? totalCost / netRent : null,
+    ...leverMath(i, totalCost, netRent),
+  };
+}
+
+/** Mortgage on the purchase price: equity = all-in cost − loan; cash-on-cash = (net rent − loan payments) ÷ equity. */
+function leverMath(i, totalCost, netRent) {
+  const ltv = Math.max(0, Math.min(90, Number(i.ltvPct) || 0)) / 100;
+  const loan = (Number(i.price) || 0) * ltv;
+  const n = Math.max(1, Math.round((Number(i.termYrs) || 20) * 12));
+  const r = Math.max(0, Number(i.ratePct) || 0) / 1200;
+  const monthly = loan ? (r ? (loan * r) / (1 - (1 + r) ** -n) : loan / n) : 0;
+  const debt = monthly * 12;
+  const equity = totalCost - loan;
+  const cash = netRent - debt;
+  return {
+    loan, debt, equity, cashFlow: cash,
+    coc: equity > 0 ? (cash / equity) * 100 : null,
+    equityYield: equity > 0 ? ((netRent - loan * (r * 12)) / equity) * 100 : null, // after interest only (principal repaid = your wealth)
+    cashPayback: cash > 0 && equity > 0 ? equity / cash : null,
   };
 }
 
@@ -160,6 +189,14 @@ function dealCalculatorHtml(props, coords, listings) {
     <label class="deal-slider"><span>Market rent <b data-rent-label>${rentLabel(i.rentM2, i.size)}</b>${i.rentIsAssumption ? ' <em class="deal-flag">assumed</em>' : ""}${infoTip(`Estimated rent a tenant would pay: ${i.rentSource}. Drag to test other rents.`)}</span>
       <input type="range" min="1" max="${maxRent}" step="0.5" value="${i.rentM2}" data-deal-slider="rentM2" /></label>
     <div class="deal-visual">${dealVisualHtml(i)}</div>
+    <div class="deal-lev">
+      <label class="deal-switch"><input type="checkbox" data-deal="lev" /><span class="deal-switch__ui" aria-hidden="true"></span><span>Finance with a mortgage${infoTip("Defaults: 60% loan-to-value, 5.5% interest, 20 years — Globalcaja's Sept 2026 commercial-premises mortgage sheet (max 60% LTV, 20 yrs, Euribor + 1.50–2.70 pp, APR 5.88%). BBVA lends up to 70%. Edit to match your bank's offer.")}</span></label>
+      <div class="deal-grid deal-grid--lev" hidden>
+        ${field("ltvPct", "Loan-to-value", i.ltvPct, 5, "%")}
+        ${field("ratePct", "Interest rate", i.ratePct, 0.1, "% / yr")}
+        ${field("termYrs", "Term", i.termYrs, 1, "years")}
+      </div>
+    </div>
     <details class="deal-assumptions"><summary>Assumptions (price, taxes, costs)</summary>
       <div class="deal-grid">
         ${field("price", "Asking price", i.price, 1000, "€")}
@@ -171,7 +208,7 @@ function dealCalculatorHtml(props, coords, listings) {
         ${field("vacancyPct", "Vacancy", i.vacancyPct, 1, "% rent")}
         ${field("opexPct", "Opex (IBI, insurance…)", i.opexPct, 1, "% rent")}
       </div>
-      <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Yields are pre-financing, pre-tax. Benchmarks: CBRE Spain retail H1 2026, Colliers Snapshot Retail Q1 2026, idealista yield report Q3 2026.</p>
+      <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Yields are pre-tax; turn on the mortgage for the financed view. Benchmarks: CBRE Spain retail H1 2026, Colliers Snapshot Retail Q1 2026, idealista yield report Q3 2026.</p>
     </details>
   </section>`;
 }
@@ -184,7 +221,7 @@ function rentLabel(rentM2, size) {
 function readDealInputs(section) {
   const out = { region: section.dataset.dealRegion || "other" };
   section.querySelectorAll("input[data-deal]").forEach((el) => {
-    out[el.dataset.deal] = Number(el.value) || 0;
+    out[el.dataset.deal] = el.type === "checkbox" ? (el.checked ? 1 : 0) : Number(el.value) || 0;
   });
   return out;
 }
@@ -203,11 +240,15 @@ function bindDealCalculator(root) {
       if (sl) sl.value = event.target.value;
     }
     const i = readDealInputs(section);
+    const levGrid = section.querySelector(".deal-grid--lev");
+    if (levGrid) levGrid.hidden = !i.lev;
     const label = section.querySelector("[data-rent-label]");
     if (label) label.innerHTML = rentLabel(i.rentM2, i.size);
     section.querySelector(".deal-visual").innerHTML = dealVisualHtml(i);
     const kpi = root.querySelector("[data-hero-yield]");
     if (kpi) { const ny = dealMath(i).netYield; kpi.textContent = dealFmtPct(ny); kpi.style.color = yieldTone(ny, i.region); }
+    const pb = root.querySelector("[data-hero-payback]");
+    if (pb) pb.textContent = `${dealFmtYears(dealMath(i).payback)} payback`;
   });
 }
 
@@ -277,7 +318,7 @@ function investorFieldsHtml(props) {
     return items.length ? `<div class="pgroup"><h4 class="pgroup__h">${iconSvg(ico, "ui-icon")}${title}</h4><ul class="pfacts">${items.join("")}</ul></div>` : "";
   }).join("");
   return `<section class="card-section investor-fields">
-    <h3 class="card-section__title">The premises</h3>
+    <h3 class="card-section__title">Property facts</h3>
     <div class="pgroups">${groups}</div>
     ${energyHtml(inv)}
   </section>`;
@@ -297,7 +338,7 @@ function investorFieldsHtmlOld(props) {
     return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(v))}</dd></div>`;
   });
   return `<section class="card-section investor-fields">
-    <h3 class="card-section__title">The premises</h3>
+    <h3 class="card-section__title">Property facts</h3>
     <dl class="facts">${rows.join("")}</dl>
     ${energyHtml(inv)}
     ${inv.admin_levels?.length ? `<p class="inv-admin">${inv.admin_levels.map(escapeHtml).join(" › ")}${inv.country ? ` · ${escapeHtml(inv.country.toUpperCase())}` : ""}</p>` : ""}
@@ -507,7 +548,20 @@ function dealKpisHtml(i) {
   const k = (label, value, strong) => `<div class="kpi${strong ? " kpi--strong" : ""}"><span>${label}</span><b>${value}</b></div>`;
   const ny = `<b style="color:${yieldTone(m.netYield, i.region)}">${dealFmtPct(m.netYield)}</b>`;
   const nyKpi = `<div class="kpi kpi--strong"><span>Net yield${infoTip(yieldTipText(i.region))}</span>${ny}<em class="kpi__word">${escapeHtml(yieldWord(m.netYield, i.region))}</em></div>`;
-  return `${nyKpi}${k("Gross yield", dealFmtPct(m.grossYield))}${k("Payback", dealFmtYears(m.payback))}${k("Net rent / yr", dealFmtEuro(m.netRent))}`;
+  const pbTip = `Payback = years of net rent needed to earn back the all-in cost (100 ÷ net yield). ${dealFmtPct(m.netYield)} net → ${dealFmtYears(m.payback)}. Typical ${YIELD_BENCH.label[i.region]} premises (${YIELD_BENCH.target[i.region]}% net) take ~${Math.round(100 / (YIELD_BENCH.target[i.region] || 7.8))} years — long, but normal for property bought without debt: you still own the premises afterwards, and rents usually rise with inflation. Turn on the mortgage to see the payback on your own cash.`;
+  const pb = `<div class="kpi"><span>Payback${infoTip(pbTip)}</span><b>${dealFmtYears(m.payback)}</b></div>`;
+  let lev = "";
+  if (i.lev) {
+    const tone = m.coc == null ? "" : `color:${m.coc < 0 ? "hsl(0 62% 40%)" : yieldTone(m.coc * 0.75, i.region)}`;
+    const cocTip = `Cash-on-cash = (net rent − mortgage payments) ÷ your cash in (all-in cost − loan). Loan ${dealFmtEuro(m.loan)}, payments ${dealFmtEuro(m.debt)}/yr, your cash ${dealFmtEuro(m.equity)}. Leverage helps only while the net yield (${dealFmtPct(m.netYield)}) beats the interest rate (${i.ratePct}%).`;
+    lev = `<div class="deal-kpis deal-kpis--lev">
+      <div class="kpi kpi--strong"><span>Cash-on-cash${infoTip(cocTip)}</span><b style="${tone}">${dealFmtPct(m.coc)}</b><em class="kpi__word">${m.coc == null ? "" : m.cashFlow < 0 ? "Rent doesn't cover the mortgage" : m.coc > m.netYield ? "Leverage boosts your return" : "Leverage lowers your return"}</em></div>
+      ${k("Return after interest", dealFmtPct(m.equityYield))}
+      <div class="kpi"><span>Cash payback${infoTip("Years for the yearly cash left after mortgage payments to repay your own cash in. Once the loan is paid off the full net rent is yours.")}</span><b>${m.cashPayback ? (m.cashPayback > 50 ? "50+ yrs" : dealFmtYears(m.cashPayback)) : "—"}</b></div>
+      ${k("Cash flow / yr", dealFmtEuro(m.cashFlow))}
+    </div>`;
+  }
+  return `${nyKpi}${k("Gross yield", dealFmtPct(m.grossYield))}${pb}${k("Net rent / yr", dealFmtEuro(m.netRent))}</div>${lev}<div hidden>`;
 }
 
 function dealVisualHtml(i) {

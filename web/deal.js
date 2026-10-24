@@ -277,18 +277,16 @@ const INV_ROWS = [
   ["agency", "Agency"],
   ["contact_name", "Contact"],
   ["phone", "Phone"],
-  ["agency_ref", "Agency ref."],
   ["advertiser_type", "Advertiser"],
-  ["listing_code", "Idealista code"],
 ];
 
 const PREMISES_GROUPS = [
-  ["Size & frontage", "ruler", ["usable_m2", "facade_m", "facade_band", "shop_windows", "storefront"]],
+  ["Listing", "tag", ["days_on_market", "advertiser_type", "agency", "contact_name", "phone"]],
   ["Layout", "layout", ["floor", "location_type", "floors_in_unit", "rooms", "bathrooms"]],
-  ["Building", "building", ["building_type", "year_built"]],
-  ["Condition & use", "wrench", ["condition", "current_use", "last_activity"]],
+  ["Size & frontage", "ruler", ["usable_m2", "facade_m", "facade_band", "shop_windows", "storefront"]],
   ["Costs", "euro", ["community_costs_month", "transfer_cost", "price_drop"]],
-  ["Listing", "tag", ["days_on_market", "advertiser_type", "agency", "contact_name", "phone", "agency_ref", "listing_code"]],
+  ["Condition & use", "wrench", ["condition", "current_use", "last_activity"]],
+  ["Building", "building", ["building_type", "year_built"]],
 ];
 const FACT_ICON = {
   usable_m2: "ruler", facade_m: "ruler", facade_band: "ruler", shop_windows: "window", storefront: "store",
@@ -352,7 +350,8 @@ function energyHtml(inv) {
   const classes = ["A", "B", "C", "D", "E", "F", "G"];
   const scale = e.class ? `<div class="energy-scale">${classes.map((c) => `<span class="e-${c}${c === e.class ? " is-on" : ""}">${c}</span>`).join("")}</div>` : "";
   const bits = [num(e.consumption) && `${num(e.consumption)} kWh/m²·yr`, num(e.emissions) && `${num(e.emissions)} kg CO₂/m²·yr`, e.note].filter(Boolean);
-  return `<div class="energy"><span class="energy__label">Energy certificate</span>${scale}${bits.length ? `<span class="energy__nums">${bits.map(escapeHtml).join(" · ")}</span>` : ""}</div>`;
+  const tip = bits.length ? infoTip(`Energy certificate${e.class ? ` class ${e.class}` : ""}: ${bits.join(" · ")}`) : "";
+  return `<div class="energy"><span class="energy__label">Energy certificate${tip}</span>${scale}</div>`;
 }
 
 /** Listing activity: Idealista public stats + price-drop trend + ad flags. */
@@ -432,6 +431,24 @@ function listingDescToggleHtml(props) {
   if (real.length) items = real;
   const rank = { orig: 0, adv: 1, auto: 2, unknown: 3, stub: 4 };
   items.sort((x, y) => rank[x.kind] - rank[y.kind]);
+  // Advertiser versions are separate texts the advertiser typed per language on Idealista (not machine
+  // translations). Most are a faithful translation of the original; when one says the same thing
+  // (similar length and the same figures), keep a single copy and prefer English.
+  const nums = (t) => new Set(String(t).match(/\d+/g) || []);
+  const sameContent = (a, b) => {
+    const r = norm(b.text).length / Math.max(1, norm(a.text).length);
+    const na = nums(a.text), nb = nums(b.text);
+    const union = new Set([...na, ...nb]).size;
+    const jac = union ? [...na].filter((x) => nb.has(x)).length / union : 1;
+    return union <= 1 ? r >= 0.85 && r <= 1.2 : r >= 0.75 && r <= 1.35 && jac >= 0.75;
+  };
+  const advEn = items.find((i) => i.k === "en" && i.kind === "adv");
+  const origEs = items.find((i) => i.k === "es" && i.kind === "orig");
+  if (advEn && origEs && sameContent(origEs, advEn)) {
+    advEn.extra = "The advertiser also wrote it in Spanish with the same content.";
+    items = items.filter((i) => i !== origEs && !(i.kind === "adv" && i.k !== "en" && sameContent(advEn, i)));
+    items.sort((x, y) => (x === advEn ? -1 : y === advEn ? 1 : 0));
+  }
   const snippet = norm(props.x?.desc);
   // the search-card text is a whitespace-collapsed, truncated copy of the original: only show it if nothing else exists
   if (snippet && !items.some((i) => norm(i.text).startsWith(snippet.slice(0, 120)))) {

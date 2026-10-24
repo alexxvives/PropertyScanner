@@ -1890,12 +1890,11 @@ body.has-modal {
 .act-flag--muted { color: var(--muted); }
 .status-pill--ad { color: var(--copper); } .status-pill--drop { color: #a93226; }
 .energy { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; font-size: 12px; }
-.energy__label { color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
+.energy__label { display: inline-flex; align-items: center; gap: 4px; color: var(--muted); text-transform: uppercase; letter-spacing: .06em; font-size: 11px; }
 .energy-scale { display: inline-flex; gap: 2px; }
 .energy-scale span { width: 20px; text-align: center; font-weight: 700; font-size: 11px; color: #fff; border-radius: 3px; padding: 2px 0; opacity: .35; }
 .energy-scale span.is-on { opacity: 1; transform: scale(1.15); }
 .e-A{background:#1a9641}.e-B{background:#52b151}.e-C{background:#a6d96a;color:#333!important}.e-D{background:#e8d23a;color:#333!important}.e-E{background:#fdae61}.e-F{background:#f46d43}.e-G{background:#d73027}
-.energy__nums { color: var(--ink); }
 .inv-admin { margin: 10px 0 0; font-size: 12px; color: var(--muted); }
 
 /* Red→green percentile bars (Why this score) */
@@ -2226,10 +2225,35 @@ body.has-modal {
 .lkpi__sub { display: block; margin-top: 2px; font-size: 12px; color: var(--muted); font-variant-numeric: tabular-nums; }
 .verdict__sub { color: var(--muted); font-size: 14px; }
 
-/* Round 12 · Deals entry points */
-.eyebrow--row { display: flex; justify-content: space-between; align-items: baseline; gap: 8px; }
-.deals-link { color: var(--ink); font-weight: 600; text-decoration: none; letter-spacing: 0; text-transform: none; border-bottom: 1px solid currentColor; }
+/* Listing header */
 .lhead { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
-.add-deal { flex: none; margin-top: 4px; margin-right: 44px; min-height: 36px; padding: 0 14px; border-radius: 999px; border: 1px solid var(--ink); background: var(--ink); color: #fff; font: inherit; font-weight: 500; font-size: 14px; cursor: pointer; }
-.add-deal:hover { background: #3a332c; }
-@media (max-width: 640px) { .lhead { flex-direction: column; } .add-deal { margin-right: 0; } }
+@media (max-width: 640px) { .lhead { flex-direction: column; } }
+
+/* Round 13: image skeletons */
+@keyframes shimmer { from { background-position: -400px 0; } to { background-position: 400px 0; } }
+.hero-img, .lcard img, .thumb img { transition: opacity .35s ease; }
+.hero-img.is-loading, img.is-loading {
+  opacity: 0;
+}
+.lhero:has(img.is-loading), .modal-thumb-btn:has(img.is-loading) { background: linear-gradient(90deg, #ece7e0 0, #f6f2ec 50%, #ece7e0 100%) 0 0 / 800px 100% #ece7e0; animation: shimmer 1.3s linear infinite; }
+img.is-broken { opacity: 0; }
+@media (prefers-reduced-motion: reduce) { .lhero, .modal-thumb-btn { animation: none !important; } .hero-img { transition: none; } }
+
+/* Round 13: verdict + score calculation */
+.detail-modal .verdict__btn { appearance: none; border: 0; border-bottom: 1px dotted currentColor; border-radius: 0; background: none; padding: 0; margin: 0; font: inherit; color: inherit; text-align: left; cursor: pointer; }
+.verdict__btn:focus-visible, .lfit__ring:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; border-radius: 8px; }
+.detail-modal button.lfit__ring { appearance: none; border: 0; background: none; padding: 0; cursor: pointer; font: inherit; color: inherit; }
+.calc { margin: 12px 0 16px; padding: 14px 16px; border: 1px solid #e3ddd4; border-radius: 12px; background: #fbf9f6; font-size: 13.5px; line-height: 1.5; color: var(--ink); }
+.calc__head { display: flex; justify-content: space-between; align-items: center; }
+.calc__head h4 { margin: 0; font-size: 15px; }
+.detail-modal .calc__x { appearance: none; padding: 0; border-radius: 50%; border: 0; background: none; font-size: 20px; cursor: pointer; color: var(--ink); min-width: 32px; min-height: 32px; }
+.calc__steps { margin: 8px 0 0; padding-left: 18px; display: grid; gap: 10px; }
+.calc__steps p { margin: 4px 0 0; }
+.calc__t { width: 100%; border-collapse: collapse; margin-top: 6px; font-variant-numeric: tabular-nums; }
+.calc__t th, .calc__t td { text-align: right; padding: 3px 6px; border-bottom: 1px solid #eee7de; }
+.calc__t th:first-child, .calc__t td:first-child { text-align: left; }
+.calc__t th { font-weight: 600; color: #5c544b; font-size: 12px; }
+
+/* Round 13: one floating tooltip for every (i) */
+.score-tip .score-tip__bubble, .score-tip:hover .score-tip__bubble, .score-tip:focus-visible .score-tip__bubble { display: none !important; }
+.ftip { position: fixed; z-index: 10000; max-width: 300px; padding: 9px 11px; border-radius: 8px; background: #1f1b17; color: #fff; font-size: 12.5px; line-height: 1.45; font-weight: 400; text-transform: none; letter-spacing: 0; box-shadow: 0 6px 20px rgba(0,0,0,.22); pointer-events: none; white-space: normal; }

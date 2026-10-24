@@ -24,7 +24,6 @@ const PLACE_TYPES = {
   gym: ["gym"],
 };
 
-import { handleDeals } from "./deals-api.mjs";
 
 const SESSION_COOKIE = "ps_session";
 const SESSION_DAYS = 30;
@@ -69,7 +68,7 @@ async function validSession(request, env) {
 
 function safeNext(url) {
   const next = new URL(url).searchParams.get("next");
-  return next === "/deals" ? "/deals" : "/";
+  return "/";
 }
 
 function loginPage(error = "", status = 200, next = "/") {
@@ -304,26 +303,20 @@ async function handleNearby(request, env, ctx) {
   return json(result, 200, "MISS");
 }
 
-const PRIVATE_PAGES = new Set(["/deals", "/deals/", "/deals.html", "/deals.js", "/deals.css"]);
-const isPrivate = (path) => PRIVATE_PAGES.has(path) || path === "/api/deals" || path.startsWith("/api/deals/");
 
 const SECURITY_HEADERS = {
   "X-Content-Type-Options": "nosniff",
   "Referrer-Policy": "same-origin",
   "X-Frame-Options": "DENY",
 };
-const PRIVATE_CSP =
-  "default-src 'self'; script-src 'self'; style-src 'self' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src 'self' data:; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'";
 
 export default {
   async fetch(request, env, ctx) {
     const url = new URL(request.url);
-    // Login/logout always exist so the private Deals pipeline can be unlocked even when the map is public.
     if (url.pathname === "/login") return handleLogin(request, env);
     if (url.pathname === "/logout") return logout();
-    const privatePath = isPrivate(url.pathname);
-    // Public by default; login is opt-in via the REQUIRE_LOGIN var ("true"). Deals ALWAYS need a session.
-    const authOff = (env.REQUIRE_LOGIN !== "true" || env.AUTH_DISABLED === "1") && !privatePath;
+    // Public by default; login is opt-in via the REQUIRE_LOGIN var ("true").
+    const authOff = env.REQUIRE_LOGIN !== "true" || env.AUTH_DISABLED === "1";
     if (!authOff) {
       if (!env.APP_PASSWORD) {
         return new Response("This area is private. Set the APP_PASSWORD secret (wrangler secret put APP_PASSWORD).", {
@@ -334,25 +327,21 @@ export default {
       if (!(await validSession(request, env))) {
         if (url.pathname.startsWith("/api/")) return json({ error: "Sign in required" }, 401);
         if (url.pathname.startsWith("/data/") || /\.(js|css)$/.test(url.pathname)) return new Response("Sign in required", { status: 401 });
-        const next = privatePath ? "?next=/deals" : "";
-        return Response.redirect(new URL(`/login${next}`, url).toString(), 302);
+        return Response.redirect(new URL("/login", url).toString(), 302);
       }
     }
     if (url.pathname.startsWith("/api/")) {
       if (!sameOrigin(request)) return json({ error: "Cross-origin request blocked" }, 403);
-      if (!(await allowRequest(request, env, privatePath ? "deals" : "api"))) return json({ error: "Too many requests, slow down" }, 429);
-      if (privatePath) return handleDeals(request, env, url);
+      if (!(await allowRequest(request, env, "api"))) return json({ error: "Too many requests, slow down" }, 429);
       if (url.pathname === "/api/walk" && request.method === "POST") return handleWalk(request, env, ctx);
       if (url.pathname === "/api/nearby" && request.method === "GET") return handleNearby(request, env, ctx);
       return json({ error: "Not found" }, 404);
     }
-    const assetReq = url.pathname === "/deals/" ? new Request(new URL("/deals", url), request) : request;
-    const response = await env.ASSETS.fetch(assetReq);
+    const response = await env.ASSETS.fetch(request);
     const headers = new Headers(response.headers);
     headers.set("X-Robots-Tag", "noindex");
     headers.set("Cache-Control", "private, no-store");
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
-    if (privatePath) headers.set("Content-Security-Policy", PRIVATE_CSP);
     return new Response(response.body, { status: response.status, headers });
   },
 };

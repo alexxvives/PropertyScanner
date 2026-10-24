@@ -425,7 +425,7 @@ function scoreTipHtml(label) {
   return `<span class="score-tip" tabindex="0" aria-label="${escapeHtml(tip)}"><span class="score-tip__mark" aria-hidden="true">?</span><span class="score-tip__bubble">${escapeHtml(tip)}</span></span>`;
 }
 
-function scoreBarHtml(score, label = "Fit score", withTip = false, featured = false) {
+function scoreBarHtml(score, label = "Fit score", withTip = false, featured = false, caption = "") {
   const value = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
   const tip = withTip ? scoreTipHtml(label) : "";
   const featuredClass = featured ? " score-bar--featured" : "";
@@ -436,6 +436,7 @@ function scoreBarHtml(score, label = "Fit score", withTip = false, featured = fa
     ${tip}
     <div class="score-bar__track" style="--score-pct:${value}">${ticks}<div class="score-bar__gradient score-bar__gradient--dim" aria-hidden="true"></div><div class="score-bar__gradient score-bar__gradient--fill" aria-hidden="true"></div></div>
     <span class="score-bar__value">${value}</span>
+    ${caption ? `<span class="score-bar__caption">${escapeHtml(caption)}</span>` : ""}
   </div>`;
 }
 
@@ -445,6 +446,32 @@ function listingFitScore(props) {
   const walkScore = state.listingWalkScores.get(props.id);
   if (walkScore == null) return areaScore;
   return combinedFitScore(areaScore, walkScore);
+}
+
+/**
+ * Percentile rank of a listing's raw fit among comparable listings:
+ * same operation (sale/rent), same city, scored for the current business type.
+ * City (not all-Spain) so Madrid and Barcelona each get their own top 10%.
+ */
+function listingRank(props) {
+  const raw = listingFitScore(props);
+  const city = cityOfId(props.i) || props.m || "Madrid";
+  const op = props.op === "rent" ? "rent" : "sale";
+  let below = 0, equal = 0, n = 0;
+  for (const f of state.listings) {
+    const p = f.properties;
+    if ((p.op === "rent" ? "rent" : "sale") !== op) continue;
+    if ((cityOfId(p.i) || p.m || "Madrid") !== city) continue;
+    const s = listingFitScore(p);
+    n += 1;
+    if (s < raw) below += 1;
+    else if (s === raw) equal += 1;
+  }
+  const pct = n > 1 ? Math.round((100 * (below + Math.max(0, equal - 1) / 2)) / (n - 1)) : 100;
+  const above = Math.max(0, n - below - equal);
+  const top = Math.max(1, Math.ceil((100 * (above + Math.max(1, equal))) / Math.max(1, n)));
+  const group = `${city} ${op === "rent" ? "rentals" : "sales"}`;
+  return { raw, pct, top, n, group, text: top <= 50 ? `Top ${top}% of ${group}` : `Bottom ${Math.max(1, 100 - top + 1)}% of ${group}` };
 }
 
 function dedupeListingFeatures(features) {
@@ -815,7 +842,7 @@ function renderListingRanking() {
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}</span>
-        <span class="score-bar-wrap">${scoreBarHtml(item.score, "Overall fit")}</span>
+        <span class="score-bar-wrap">${scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, `${item.rank.text} · raw ${item.rank.raw}`)}</span>
       </button></li>`;
         })
         .join("")
@@ -972,6 +999,7 @@ function collectRankableListings({ restrictToBounds = false } = {}) {
       kind: "listing",
       id: props.id,
       score,
+      rank: listingRank(props),
       city,
       areaName: area?.properties?.name || props.n || "",
       props,
@@ -1226,7 +1254,11 @@ function modalFitSectionHtml(areaProps, concept) {
 function refreshFitScoresUi(areaScore, walkScore) {
   const ring = detailModalBody.querySelector(".lfit__ring");
   if (ring && Number.isFinite(walkScore)) {
-    ring.innerHTML = fitRingHtml(combinedFitScore(areaScore, walkScore), "neighbourhood + 10-min walk");
+    const activeProps = state.listings.find((f) => f.properties.id === state.activeListingId)?.properties;
+    const concept = (state.query?.label || "").toLowerCase();
+    ring.innerHTML = activeProps ? listingRankRingHtml(activeProps, concept) : fitRingHtml(combinedFitScore(areaScore, walkScore), "neighbourhood + 10-min walk");
+    const rawEl = detailModalBody.querySelector('[data-sub="raw"] b');
+    if (rawEl) rawEl.textContent = combinedFitScore(areaScore, walkScore);
     const sub = detailModalBody.querySelector('[data-sub="walk"]');
     if (sub) sub.textContent = Math.round(walkScore);
   }
@@ -1452,17 +1484,22 @@ function whyScoreHtml(areaProps) {
     <div class="why-groups">${groups}</div>`;
 }
 
-function listingFitHtml(areaProps, concept) {
+function listingRankRingHtml(props, concept) {
+  const r = listingRank(props);
+  return fitRingHtml(r.pct, `${r.text} for ${concept} (rank, not raw score)`);
+}
+
+function listingFitHtml(areaProps, concept, props) {
   if (!areaProps) {
     return `<section class="card-section lwhy"><p class="live-note">No barrio score for this pin yet.</p><div class="visit-live fit-subsection--walk" hidden></div></section>`;
   }
   return `<section class="card-section lwhy">
     <div class="lwhy__head">
-      <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${fitRingHtml(areaProps.score, `for ${concept} · area only until the walk loads`)}</div>
+      <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</div>
       <div>
         <h3 class="lwhy__title">Why this score</h3>
         <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
-        <p class="lwhy__sub">Neighbourhood <b data-sub="area">${Math.round(areaProps.score)}</b> · 10-minute walk <b data-sub="walk">…</b> · ${escapeHtml(areaProps.name)}, ${escapeHtml(areaProps.city)}</p>
+        <p class="lwhy__sub"><span data-sub="raw">Raw fit <b>${props ? listingFitScore(props) : Math.round(areaProps.score)}</b>/100</span> · avg of neighbourhood <b data-sub="area">${Math.round(areaProps.score)}</b> · 10-minute walk <b data-sub="walk">…</b> · ${escapeHtml(areaProps.name)}, ${escapeHtml(areaProps.city)}</p>
       </div>
     </div>
     ${whyScoreHtml(areaProps)}
@@ -1532,7 +1569,7 @@ function listingModalContent(props) {
       ${listingActivityHtml(props.inv || {})}
       ${listingFeaturesHtml(props.inv || {})}
     </div>
-    <div id="sec-why" class="lsec">${listingFitHtml(areaProps, concept)}</div>
+    <div id="sec-why" class="lsec">${listingFitHtml(areaProps, concept, props)}</div>
     <div id="sec-deal" class="lsec">${dealCalculatorHtml(props, coords, state.listings)}</div>
     <div id="sec-details" class="lsec">
       ${investorFieldsHtml(props)}

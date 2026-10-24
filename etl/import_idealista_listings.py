@@ -389,6 +389,22 @@ def text_list(value: object, key: str = "text", limit: int = 8) -> list[str]:
 
 
 
+RAW_BAG_DROP = ("comments", "propertyComment", "characteristics.", "moreCharacteristics.", "ubication.", "detailWebLink", "modificationDate", "card.", "translatedTexts", "multimedia", "suggestedTexts", "tracking", "contactInfo.agentInfo", "contactInfo.corporate")
+
+
+def prune_raw_bag(props: dict) -> None:
+    """Drop raw per-language comment copies and media blobs once curated fields exist (keeps the asset small)."""
+    bag = (props.get("x") or {}).get("idealista")
+    if isinstance(bag, dict):
+        for key in [k for k in bag if k.startswith(RAW_BAG_DROP)]:
+            del bag[key]
+    inv = props.get("inv")
+    if isinstance(inv, dict):
+        # photo URL list and thumb already live in x.imgs / x.thumb; the UI reads those.
+        inv.pop("photos", None)
+        inv.pop("thumb", None)
+
+
 def listing_detail(item: dict) -> dict:
 
     multimedia = item.get("multimedia") or {}
@@ -885,6 +901,7 @@ def recurate_existing() -> None:
     for feature in collection["features"]:
         props = feature["properties"]
         props["inv"] = curate_listing(props, props.get("x") or {}, first_seen, today)
+        prune_raw_bag(props)
     collection["meta"]["investorFields"] = INVESTOR_FIELDS
     OUT.write_text(json.dumps(collection, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
     save_first_seen(first_seen)
@@ -994,6 +1011,7 @@ def main() -> None:
     for feature in features:
         props = feature["properties"]
         props["inv"] = curate_listing(props, props["x"], first_seen, today)
+        prune_raw_bag(props)
     save_first_seen(first_seen)
 
     collection = {

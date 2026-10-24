@@ -45,12 +45,12 @@
     "barcelona": 0
   },
   "idealistaListings": {
-    "total": 500,
+    "total": 2243,
     "counts": {
-      "barcelona_rent": 100,
-      "barcelona_sale": 100,
-      "madrid_rent": 150,
-      "madrid_sale": 150
+      "barcelona_rent": 450,
+      "barcelona_sale": 450,
+      "madrid_rent": 671,
+      "madrid_sale": 672
     },
     "operation": [
       "sale",
@@ -71,6 +71,7 @@
       "has360",
       "has3d",
       "hasPlan",
+      "hasStaging",
       "hasVideo",
       "highlight",
       "idealista",

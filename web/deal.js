@@ -15,6 +15,36 @@ const DEAL_DEFAULTS = {
   minComps: 3,
 };
 
+/* Yield benchmarks (net of buying costs, vacancy and running costs, like our "Net yield").
+ * - Prime high street: 3.75% (CBRE Spain retail figures H1 2026 and Q4 2025; Colliers Snapshot Retail MAD & BCN Q1 2026: 3.70% Madrid, 3.80% Barcelona).
+ * - Typical street premises: idealista gross yield for "locales", Q3 2026 (13 Oct 2026): Madrid 6.8%, Barcelona 8.0%, Spain 10.0%.
+ *   Converted to our net basis with the calculator's own defaults (13% of rent lost to vacancy + opex, ~8–12% buying costs): ≈ ×0.78.
+ * The target is the city's typical net yield; red at prime level, green ~2 points above typical. */
+const YIELD_BENCH = {
+  prime: 3.75,
+  gross: { madrid: 6.8, barcelona: 8.0, other: 10.0 },
+  target: { madrid: 5.3, barcelona: 6.2, other: 7.8 },
+  label: { madrid: "Madrid", barcelona: "Barcelona", other: "Spain" },
+};
+function yieldTone(net, region = "other") {
+  if (net == null || !Number.isFinite(net)) return "";
+  const lo = YIELD_BENCH.prime, hi = (YIELD_BENCH.target[region] || 7.8) + 2;
+  const t = Math.max(0, Math.min(1, (net - lo) / (hi - lo)));
+  return `hsl(${Math.round(t * 125)} 62% ${t > 0.35 && t < 0.7 ? 36 : 40}%)`;
+}
+function yieldWord(net, region = "other") {
+  if (net == null || !Number.isFinite(net)) return "";
+  const tgt = YIELD_BENCH.target[region] || 7.8;
+  if (net < YIELD_BENCH.prime + 0.5) return "Prime-street level — only worth it on a top street";
+  if (net < tgt - 0.5) return `Below the typical ${YIELD_BENCH.label[region]} premises yield`;
+  if (net < tgt + 1) return `About typical for ${YIELD_BENCH.label[region]} premises`;
+  return `Above typical for ${YIELD_BENCH.label[region]} premises`;
+}
+function yieldTipText(region = "other") {
+  const L = YIELD_BENCH.label[region];
+  return `Net yield = yearly rent after vacancy and running costs ÷ all-in purchase cost. Benchmarks: prime high-street ${YIELD_BENCH.prime}% (CBRE H1 2026, Colliers Q1 2026); typical ${L} premises ≈ ${YIELD_BENCH.target[region]}% net (idealista Q3 2026: ${YIELD_BENCH.gross[region]}% gross). Red = prime-level, green = clearly above typical.`;
+}
+
 function dealRegion(props) {
   const text = `${props.m || ""} ${props.pr || ""} ${props.i || ""}`.toLowerCase();
   if (/barcelona|catalu|^bcn-|\bbcn-/.test(text)) return "barcelona";
@@ -126,8 +156,8 @@ function dealCalculatorHtml(props, coords, listings) {
     `<label class="deal-in"><span>${label}</span><span class="deal-in__box"><input type="number" inputmode="decimal" step="${step}" data-deal="${name}" value="${value}" /><em>${suffix}</em></span></label>`;
   const maxRent = Math.max(40, Math.ceil(i.rentM2 * 2));
   return `<section class="deal-calc card-section" data-deal-region="${i.region}">
-    <h3 class="card-section__title">Deal calculator</h3>
-    <label class="deal-slider"><span>Market rent <b data-rent-label>${i.rentM2} €/m²/mo</b>${i.rentIsAssumption ? ' <em class="deal-flag">assumed</em>' : ""}</span>
+    <input type="hidden" data-deal-region-v="${i.region}" />
+    <label class="deal-slider"><span>Market rent <b data-rent-label>${rentLabel(i.rentM2, i.size)}</b>${i.rentIsAssumption ? ' <em class="deal-flag">assumed</em>' : ""}${infoTip(`Estimated rent a tenant would pay: ${i.rentSource}. Drag to test other rents.`)}</span>
       <input type="range" min="1" max="${maxRent}" step="0.5" value="${i.rentM2}" data-deal-slider="rentM2" /></label>
     <div class="deal-visual">${dealVisualHtml(i)}</div>
     <details class="deal-assumptions"><summary>Assumptions (price, taxes, costs)</summary>
@@ -141,13 +171,18 @@ function dealCalculatorHtml(props, coords, listings) {
         ${field("vacancyPct", "Vacancy", i.vacancyPct, 1, "% rent")}
         ${field("opexPct", "Opex (IBI, insurance…)", i.opexPct, 1, "% rent")}
       </div>
-      <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Yields are pre-financing, pre-tax.</p>
+      <p class="deal-note${i.rentIsAssumption ? " deal-note--warn" : ""}">Rent: ${escapeHtml(i.rentSource)}. ITP default ${i.region === "barcelona" ? "10% (Catalonia)" : i.region === "madrid" ? "6% (Madrid)" : "7% (generic)"}. Yields are pre-financing, pre-tax. Benchmarks: CBRE Spain retail H1 2026, Colliers Snapshot Retail Q1 2026, idealista yield report Q3 2026.</p>
     </details>
   </section>`;
 }
 
+function rentLabel(rentM2, size) {
+  const total = (Number(rentM2) || 0) * (Number(size) || 0);
+  return total ? `${dealFmtEuro(total)} / month <small>(${rentM2} €/m²)</small>` : `${rentM2} €/m²/mo`;
+}
+
 function readDealInputs(section) {
-  const out = {};
+  const out = { region: section.dataset.dealRegion || "other" };
   section.querySelectorAll("input[data-deal]").forEach((el) => {
     out[el.dataset.deal] = Number(el.value) || 0;
   });
@@ -169,10 +204,10 @@ function bindDealCalculator(root) {
     }
     const i = readDealInputs(section);
     const label = section.querySelector("[data-rent-label]");
-    if (label) label.textContent = `${i.rentM2} €/m²/mo`;
+    if (label) label.innerHTML = rentLabel(i.rentM2, i.size);
     section.querySelector(".deal-visual").innerHTML = dealVisualHtml(i);
     const kpi = root.querySelector("[data-hero-yield]");
-    if (kpi) kpi.textContent = dealFmtPct(dealMath(i).netYield);
+    if (kpi) { const ny = dealMath(i).netYield; kpi.textContent = dealFmtPct(ny); kpi.style.color = yieldTone(ny, i.region); }
   });
 }
 
@@ -206,7 +241,49 @@ const INV_ROWS = [
   ["listing_code", "Idealista code"],
 ];
 
+const PREMISES_GROUPS = [
+  ["Size & frontage", "ruler", ["usable_m2", "facade_m", "facade_band", "shop_windows", "storefront"]],
+  ["Layout", "layout", ["floor", "location_type", "floors_in_unit", "rooms", "bathrooms"]],
+  ["Building", "building", ["building_type", "year_built"]],
+  ["Condition & use", "wrench", ["condition", "current_use", "last_activity"]],
+  ["Costs", "euro", ["community_costs_month", "transfer_cost", "price_drop"]],
+  ["Listing", "tag", ["days_on_market", "advertiser_type", "agency", "contact_name", "phone", "agency_ref", "listing_code"]],
+];
+const FACT_ICON = {
+  usable_m2: "ruler", facade_m: "ruler", facade_band: "ruler", shop_windows: "window", storefront: "store",
+  floor: "layers", location_type: "mapPin", floors_in_unit: "layers", rooms: "layout", bathrooms: "bath",
+  building_type: "building", year_built: "calendar", condition: "wrench", current_use: "store", last_activity: "clock",
+  community_costs_month: "wallet", transfer_cost: "euro", price_drop: "trendDown", days_on_market: "clock",
+  advertiser_type: "user", agency: "badge", contact_name: "user", phone: "phone", agency_ref: "hash", listing_code: "hash",
+};
+
 function investorFieldsHtml(props) {
+  const inv = props.inv || {};
+  const fmt = (k, label) => {
+    let v = inv[k];
+    if (k === "days_on_market") v = `${v} days (since ${inv.first_seen})`;
+    if (k === "community_costs_month") v = `${v} €/month`;
+    if (k === "usable_m2") v = `${v} m²`;
+    if (k === "facade_m") v = `${v} m`;
+    if (k === "transfer_cost") v = typeof v === "number" ? dealFmtEuro(v) : v;
+    if (k === "advertiser_type") v = v === "private" ? "Private owner" : "Agency / professional";
+    const val = k === "phone" ? `<a href="tel:${escapeHtml(String(v).replace(/\s/g, ""))}">${escapeHtml(String(v))}</a>` : escapeHtml(String(v));
+    return `<li class="pfact">${iconSvg(FACT_ICON[k] || "hash", "ui-icon pfact__ico")}<span class="pfact__l">${escapeHtml(label)}</span><span class="pfact__v">${val}</span></li>`;
+  };
+  const labels = Object.fromEntries(INV_ROWS);
+  const has = (k) => inv[k] !== undefined && inv[k] !== "" && inv[k] !== null;
+  const groups = PREMISES_GROUPS.map(([title, ico, keys]) => {
+    const items = keys.filter((k) => has(k) && !(k === "facade_band" && has("facade_m"))).map((k) => fmt(k, labels[k]));
+    return items.length ? `<div class="pgroup"><h4 class="pgroup__h">${iconSvg(ico, "ui-icon")}${title}</h4><ul class="pfacts">${items.join("")}</ul></div>` : "";
+  }).join("");
+  return `<section class="card-section investor-fields">
+    <h3 class="card-section__title">The premises</h3>
+    <div class="pgroups">${groups}</div>
+    ${energyHtml(inv)}
+  </section>`;
+}
+
+function investorFieldsHtmlOld(props) {
   const inv = props.inv || {};
   const rows = INV_ROWS.filter(([k]) => k !== "location" && inv[k] !== undefined && inv[k] !== "").map(([k, label]) => {
     let v = inv[k];
@@ -320,8 +397,19 @@ function listingDescToggleHtml(props) {
     if (!items.length) items.push({ k: "snip", kind: "snip", text: String(props.x.desc) });
   }
   if (!items.length) return "";
+  // Idealista machine-translates only the advertiser's main text; when the original already embeds other
+  // languages ("English:", "Català:") the translation covers just one block, so the two look different.
+  const orig = items.find((i) => i.kind === "orig");
+  const multi = orig && /(^|\n)\W*(english|inglés|català|catalán|castellano|español)\b[^\n]{0,40}:?/i.test(orig.text);
+  items.forEach((i) => {
+    if (i.kind !== "auto" || !orig) return;
+    const r = norm(i.text).length / Math.max(1, norm(orig.text).length);
+    if (multi && r < 0.8) i.extra = "Shorter than the original because the advertiser's text contains several languages and Idealista translated only one of them.";
+    else if (r < 0.7) i.extra = "Shorter than the original: Idealista's translation does not cover the whole advertiser text.";
+    else i.extra = "A machine translation, so wording differs from the original; facts and figures should match.";
+  });
   const label = (i) => i.kind === "snip" ? "Search-card snippet" : `${KIND[i.kind][0]} · ${LANG[i.k]}`;
-  const note = (i) => i.kind === "snip" ? "Truncated text from the Idealista search results." : KIND[i.kind][1];
+  const note = (i) => i.kind === "snip" ? "Truncated text from the Idealista search results." : `${KIND[i.kind][1]}${i.extra ? ` ${i.extra}` : ""}`;
   const btns = items.length > 1 ? `<div class="ldesc2__langs" role="group" aria-label="Description source">${items.map((i, n) => `<button type="button" data-lang="${i.k}" class="${n ? "" : "is-on"}">${escapeHtml(label(i))}</button>`).join("")}</div>` : "";
   return `<section class="card-section ldesc2">
     <div class="ldesc2__head"><h3 class="card-section__title">Description</h3>${btns}</div>
@@ -344,7 +432,7 @@ function fitRingHtml(score, label = "Overall fit") {
   return `<div class="fit-ring" data-score="${v}" title="${label}: ${v}/100">
     <svg viewBox="0 0 80 80" width="84" height="84" aria-hidden="true">
       <circle cx="40" cy="40" r="${r}" class="fit-ring__track"/>
-      <circle cx="40" cy="40" r="${r}" class="fit-ring__fill" stroke-dasharray="${((v / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 40 40)"/>
+      <circle cx="40" cy="40" r="${r}" class="fit-ring__fill" style="stroke:hsl(${Math.round(Math.max(0, Math.min(1, (v - 25) / 55)) * 125)} 58% 42%)" stroke-dasharray="${((v / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 40 40)"/>
       <text x="40" y="44" text-anchor="middle" class="fit-ring__num">${v}</text>
     </svg>
     <div class="fit-ring__text"><strong>${word} fit</strong><span>${escapeHtml(label)}</span></div>
@@ -399,11 +487,11 @@ function yieldCurveHtml(i) {
   const sx = (r) => L + (r / maxRent) * (W - L - R);
   const sy = (v) => H - B - (Math.max(0, v) / maxY) * (H - B - T);
   const pts = Array.from({ length: 21 }, (_, k) => (k / 20) * maxRent).map((r) => `${sx(r).toFixed(1)},${sy(y(r)).toFixed(1)}`).join(" ");
-  const target = 7; // typical retail investor target net yield
+  const target = YIELD_BENCH.target[i.region] || 7.8; // typical net yield for this city's premises (see YIELD_BENCH)
   const cx = sx(cur), cy = sy(y(cur));
   const yTicks = [0, maxY / 2, maxY].map((v) => `<text x="${L - 4}" y="${sy(v) + 3}" text-anchor="end">${v}%</text>`).join("");
   return `<svg class="ycurve" viewBox="0 0 ${W} ${H}" aria-label="Net yield vs rent">
-    <line x1="${L}" y1="${sy(target)}" x2="${W - R}" y2="${sy(target)}" class="ycurve__target"/><text x="${W - R}" y="${sy(target) - 3}" text-anchor="end" class="ycurve__tlabel">${target}% target</text>
+    <line x1="${L}" y1="${sy(target)}" x2="${W - R}" y2="${sy(target)}" class="ycurve__target"/><text x="${W - R}" y="${sy(target) + 12}" text-anchor="end" class="ycurve__tlabel">${target}% typical ${YIELD_BENCH.label[i.region] || ""}</text>
     <polyline points="${pts}" class="ycurve__line"/>
     <line x1="${cx}" y1="${cy}" x2="${cx}" y2="${H - B}" class="ycurve__drop"/>
     <circle cx="${cx}" cy="${cy}" r="4" class="ycurve__dot"/>
@@ -417,7 +505,9 @@ function yieldCurveHtml(i) {
 function dealKpisHtml(i) {
   const m = dealMath(i);
   const k = (label, value, strong) => `<div class="kpi${strong ? " kpi--strong" : ""}"><span>${label}</span><b>${value}</b></div>`;
-  return `${k("Net yield", dealFmtPct(m.netYield), true)}${k("Gross yield", dealFmtPct(m.grossYield))}${k("Payback", dealFmtYears(m.payback))}${k("Net rent / yr", dealFmtEuro(m.netRent))}`;
+  const ny = `<b style="color:${yieldTone(m.netYield, i.region)}">${dealFmtPct(m.netYield)}</b>`;
+  const nyKpi = `<div class="kpi kpi--strong"><span>Net yield${infoTip(yieldTipText(i.region))}</span>${ny}<em class="kpi__word">${escapeHtml(yieldWord(m.netYield, i.region))}</em></div>`;
+  return `${nyKpi}${k("Gross yield", dealFmtPct(m.grossYield))}${k("Payback", dealFmtYears(m.payback))}${k("Net rent / yr", dealFmtEuro(m.netRent))}`;
 }
 
 function dealVisualHtml(i) {

@@ -2128,3 +2128,55 @@ body.has-modal {
   .agebar__legend { margin-left: 0; }
   .near-list { columns: 1; }
 }
+
+/* ---------- Round 10 ---------- */
+.ltop { display: grid; gap: 12px; }
+.ltop .verdict { margin: 0; }
+/* competitors as chips */
+.near-block { display: grid; gap: 8px; }
+.near-avg { color: var(--muted); font-weight: 500; margin-left: 4px; }
+.pchips { display: flex; flex-wrap: wrap; gap: 6px; }
+.pchip { display: inline-flex; align-items: center; gap: 6px; max-width: 100%; padding: 4px 10px; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); text-decoration: none; font-size: 12.5px; line-height: 1.3; transition: border-color .15s, background .15s; }
+.pchip:hover, .pchip:focus-visible { border-color: var(--ink); background: rgba(29,25,21,.04); }
+.pchip__n { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 220px; font-weight: 500; }
+.pchip__m { display: inline-flex; gap: 4px; color: var(--muted); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.pchip__m span:first-child { color: #a0630f; font-weight: 600; }
+.pchip__r { font-size: 11.5px; }
+/* walk factors: 2 columns on desktop */
+@media (min-width: 720px) {
+  .flat-more--walk[open] .parts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px 24px; }
+  .flat-more--walk .parts > li { margin: 0; }
+}
+/* visual factor chart */
+.wv-scale { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin: 12px 0 4px; font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: .05em; }
+.wv-scale .score-tip { margin-right: auto; }
+.wv-groups { display: grid; gap: 14px; }
+@media (min-width: 720px) { .wv-groups { grid-template-columns: 1fr 1fr; gap: 16px 28px; } }
+.wv-group__h { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.wv-group__h .ui-icon { width: 16px; height: 16px; color: var(--muted); }
+.wv-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 10px; }
+.wv { display: grid; grid-template-columns: 1fr; gap: 4px; }
+.wv__name { font-size: 13px; color: var(--ink); display: flex; align-items: center; gap: 4px; }
+.wv__track { position: relative; height: 8px; border-radius: 999px; }
+.wv__track--up { background: linear-gradient(90deg, #e9a191, #efd59a 50%, #9fd0a4); }
+.wv__track--down { background: linear-gradient(90deg, #9fd0a4, #efd59a 50%, #e9a191); }
+.wv__track--neutral { background: linear-gradient(90deg, #ece6dd, #cfc5b8); }
+.wv__track i { position: absolute; top: 50%; width: 14px; height: 14px; border-radius: 50%; background: var(--ink); border: 2px solid #fff; box-shadow: 0 1px 3px rgba(0,0,0,.25); transform: translate(-50%, -50%); }
+.wv__val { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; }
+.wv__val b { font-weight: 600; color: var(--ink); }
+.wv__val small { color: var(--muted); font-size: 12px; font-variant-numeric: tabular-nums; text-align: right; }
+/* calculator */
+.deal-slider small { font-weight: 400; color: var(--muted); font-size: .85em; }
+.kpi__word { display: block; font-style: normal; font-size: 11px; color: var(--muted); line-height: 1.3; margin-top: 2px; }
+/* premises */
+.pgroups { display: grid; gap: 14px; }
+@media (min-width: 720px) { .pgroups { grid-template-columns: 1fr 1fr; gap: 16px 28px; } }
+.pgroup__h { display: flex; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--ink); }
+.pgroup__h .ui-icon { width: 16px; height: 16px; color: var(--copper); }
+.pfacts { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+.pfact { display: grid; grid-template-columns: 18px 1fr auto; align-items: center; gap: 8px; padding: 6px 0; border-bottom: 1px solid rgba(229,217,203,.6); font-size: 13px; }
+.pfact:last-child { border-bottom: 0; }
+.pfact__ico { width: 15px; height: 15px; color: var(--muted); }
+.pfact__l { color: var(--muted); }
+.pfact__v { color: var(--ink); font-weight: 500; text-align: right; overflow-wrap: anywhere; }
+.pfact__v a { color: inherit; }

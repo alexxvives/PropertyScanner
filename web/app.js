@@ -1377,18 +1377,21 @@ function nearbyCompetitorScore(nearby) {
 
 function nearbyPlacesBlock(nearby) {
   if (!Number.isFinite(nearby?.count)) return "";
-  const names = (nearby.names || []).slice(0, 12);
   const noun = nearby.count === 1 ? "similar business" : "similar businesses";
-  const rating = nearby.rating ? ` · avg ${nearby.rating}★ on Google` : "";
-  const line = `<b>${formatNumber(nearby.count)}</b> ${noun} within 400 m`;
-  if (!names.length) return `<p class="near-line">${line}${infoTip("Google Places listings whose main type matches this business, within a 400 m radius (about a 5-minute walk).")}</p>`;
-  return `<details class="near-line"><summary>${line}<span class="near-line__more">Show names</span></summary>
-    <ul class="near-list">${names.map((n) => `<li>${escapeHtml(n)}</li>`).join("")}</ul>
-    <p class="unit-note">Google Places, main type only${rating}.</p></details>`;
+  const avg = nearby.rating ? ` <span class="near-avg">avg ${nearby.rating}★</span>` : "";
+  const tip = infoTip("Businesses on Google Maps whose main category matches this one, within 400 m (about a 5-minute walk). Click a name to open it on Google Maps.");
+  const places = nearby.places?.length ? nearby.places : (nearby.names || []).map((name) => ({ name }));
+  const chip = (p) => {
+    const meta = [p.rating ? `★ ${p.rating.toFixed(1)}` : "", p.reviews ? `${formatNumber(p.reviews)}` : "", p.price ? "€".repeat(p.price) : ""].filter(Boolean);
+    const href = p.url || `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(p.name)}`;
+    return `<a class="pchip" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(p.name)}${p.reviews ? ` · ${p.reviews} Google reviews` : ""}"><span class="pchip__n">${escapeHtml(p.name)}</span>${meta.length ? `<span class="pchip__m">${meta.map((m, i) => i === 1 ? `<span class="pchip__r">(${m})</span>` : `<span>${m}</span>`).join("")}</span>` : ""}</a>`;
+  };
+  return `<div class="near-block"><p class="near-line"><b>${formatNumber(nearby.count)}</b> ${noun} within 400 m${avg}${tip}</p>
+    ${places.length ? `<div class="pchips">${places.slice(0, 12).map(chip).join("")}</div>` : ""}</div>`;
 }
 
 function walkBreakdownHtml(scored, nearby) {
-  return `${nearbyPlacesBlock(nearby)}<details class="flat-more"><summary>Walk factors</summary><p class="unit-note">${escapeHtml(leadFrom(scored.parts))}</p>${partsHtml(scored.parts)}</details>`;
+  return `${nearbyPlacesBlock(nearby)}<details class="flat-more flat-more--walk"><summary>Walk factors</summary>${partsHtml(scored.parts)}</details>`;
 }
 
 function listingSpecsHtml(detail, props, options = {}) {
@@ -1529,7 +1532,7 @@ function infoTip(text) {
 
 const WHY_GROUPS = [
   {
-    title: "Demand",
+    title: "Demand", icon: "users",
     rows: [
       { part: () => scorePartLabel("foot"), name: "Footfall", tip: "Open shops and businesses per km² — a proxy for how many people walk past.", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
       { part: () => scorePartLabel("popDensity"), name: "Residents", tip: "People living per km² in this neighbourhood (municipal census).", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
@@ -1537,24 +1540,24 @@ const WHY_GROUPS = [
     ],
   },
   {
-    title: "Competition",
+    title: "Competition", icon: "store",
     rows: [
       { part: () => scorePartLabel("competitors"), name: "Same-type businesses", tip: "Open businesses of the same type in this neighbourhood. Fewer usually means less competition.", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
       { part: () => scorePartLabel("pals"), name: "Complementary shops", tip: "Shops that bring the same customers (e.g. a café near a bakery).", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
     ],
   },
   {
-    title: "Access",
+    title: "Access", icon: "train",
     rows: [
       { part: () => scorePartLabel("metro"), name: "Public transit", tip: "Metro and bus stops in this neighbourhood.", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
-      { part: () => null, name: "Road traffic", tip: "Measured vehicles per hour on nearby roads. Context only.", get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
+      { part: () => null, name: "Road traffic", tip: "Measured vehicles per hour on nearby roads. Context only.", get: (p) => p.traffic_veh_h, neutral: true, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
     ],
   },
   {
-    title: "Supply",
+    title: "Supply", icon: "building",
     rows: [
       { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", tip: "Square metres of retail space per km² — how commercial the area is.", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
-      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². Some vacancy means room to open; a lot can mean a weak street.", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². Some vacancy means room to open; a lot can mean a weak street.", get: (p) => p.vacant_per_km2, neutral: true, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
     ],
   },
 ];
@@ -1563,10 +1566,12 @@ function whyRowHtml(row, areaProps) {
   const value = row.get(areaProps);
   if (!Number.isFinite(value)) return "";
   const pct = cityPercentile(areaProps, row.get);
-  return `<li class="why-row">
-    <span class="why-row__name">${escapeHtml(row.name)}${row.tip ? infoTip(row.tip) : ""}</span>
-    <span class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</span>
-    <span class="why-row__word">${escapeHtml(pctWords(pct, areaProps.city))}</span>
+  const dir = row.neutral ? "neutral" : row.invert ? "down" : "up";
+  const p = Math.max(2, Math.min(98, pct ?? 50));
+  return `<li class="wv">
+    <span class="wv__name">${escapeHtml(row.name)}${row.tip ? infoTip(row.tip) : ""}</span>
+    <span class="wv__track wv__track--${dir}" role="img" aria-label="${escapeHtml(row.name)}: ${escapeHtml(pctWords(pct, areaProps.city))}"><i style="left:${p}%"></i></span>
+    <span class="wv__val"><b>${escapeHtml(pctWords(pct, areaProps.city))}</b><small>${escapeHtml(row.fmt(value, areaProps))}</small></span>
   </li>`;
 }
 
@@ -1584,12 +1589,12 @@ function whyScoreHtml(areaProps) {
     || `<li class="reason"><span class="reason__ico">·</span><span>Nothing stands out either way for this business type.</span></li>`;
   const groups = WHY_GROUPS.map((g) => {
     const rows = g.rows.map((r) => whyRowHtml(r, areaProps)).join("");
-    return rows ? `<h4 class="why-group__h">${g.title}</h4><ul class="why-list">${rows}</ul>` : "";
+    return rows ? `<div class="wv-group"><h4 class="wv-group__h">${iconSvg(g.icon, "ui-icon")}${g.title}</h4><ul class="wv-list">${rows}</ul></div>` : "";
   }).join("");
   return `<ul class="reasons">${reasons}</ul>
     <details class="flat-more"><summary>Show all factors</summary>
-      <p class="unit-note">Each figure is for the neighbourhood (${escapeHtml(areaProps.name)}), compared with other ${escapeHtml(areaProps.city)} neighbourhoods.</p>
-      ${groups}</details>`;
+      <div class="wv-scale"><span>Lowest in ${escapeHtml(areaProps.city)}</span>${infoTip(`Each dot places ${areaProps.name} among all ${areaProps.city} neighbourhoods. Green = better for this business, red = worse, grey = context only.`)}<span>Highest</span></div>
+      <div class="wv-groups">${groups}</div></details>`;
 }
 
 function listingRankRingHtml(props, concept) {
@@ -1605,7 +1610,7 @@ function listingFitHtml(areaProps, concept, props) {
     <div class="lwhy__head">
       <div class="lfit__ring" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</div>
       <div>
-        <h3 class="flat__h">Why it ranks here${infoTip("The ring is this listing's rank among comparable listings (same city, same sale/rent), based on its neighbourhood and a 10-minute walk around the door.")}</h3>
+        <h3 class="flat__h">Strengths &amp; watch-outs${infoTip("The ring shows how this listing ranks among comparable listings (same city, same sale/rent), based on its neighbourhood and a 10-minute walk around the door.")}</h3>
         <p class="lfit__lead">${escapeHtml(areaProps.lead || "")}</p>
       </div>
     </div>
@@ -1649,7 +1654,7 @@ function listingModalContent(props) {
   const kpis = `<div class="lkpis">
     ${kpi(props.op === "rent" ? "Rent / month" : "Asking price", props.p ? formatEuro(props.p) : "—")}
     ${kpi("Per m²", pm2 ? `${formatNumber(pm2)} €` : "—", `Price divided by the ${props.sz ? formatNumber(props.sz) : ""} m² built area${props.op === "rent" ? " (monthly)" : ""}.`)}
-    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), "Estimated yearly rent after costs, divided by the total purchase cost. Open the Deal tab to change the assumptions.", "data-hero-yield") : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
+    ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), `${yieldTipText(di.region)} Open the Calculator tab to change the assumptions.`, `data-hero-yield style="color:${yieldTone(dm.netYield, di.region)}"`) : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
     ${rank ? kpi("Rank", rank.top <= 50 ? `Top ${rank.top}%` : `Bottom ${Math.max(1, 100 - rank.top + 1)}%`, `Among ${formatNumber(rank.n)} ${rank.group} for ${concept}.`) : ""}
   </div>`;
   let verdict = "";
@@ -1677,19 +1682,18 @@ function listingModalContent(props) {
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
     </header>
+    <div class="ltop">
+      ${listingHeroHtml(images, props.u)}
+      ${kpis}
+      ${verdict}
+    </div>
     <nav class="lnav" role="tablist" aria-label="Card sections">
-      ${tab("sec-overview", "Overview", true)}
-      ${tab("sec-why", "Why")}
+      ${tab("sec-why", "Why", true)}
       ${tenantEv ? tab("sec-tenant", escapeHtml(state.tenant.name.split(/[ ·]/)[0])) : ""}
-      ${dm ? tab("sec-deal", "Deal") : ""}
+      ${dm ? tab("sec-deal", "Calculator") : ""}
       ${tab("sec-details", "Details")}
     </nav>
-    <div id="sec-overview" class="lsec" role="tabpanel">
-      ${verdict}
-      ${kpis}
-      ${listingHeroHtml(images, props.u)}
-    </div>
-    <div id="sec-why" class="lsec" role="tabpanel" hidden>${listingFitHtml(areaProps, concept, props)}</div>
+    <div id="sec-why" class="lsec" role="tabpanel">${listingFitHtml(areaProps, concept, props)}</div>
     ${tenantEv ? `<div id="sec-tenant" class="lsec" role="tabpanel" hidden>${tenantChecksHtml(state.tenant, tenantEv, props.id)}</div>` : ""}
     ${dm ? `<div id="sec-deal" class="lsec" role="tabpanel" hidden>${dealCalculatorHtml(props, coords, state.listings)}</div>` : ""}
     <div id="sec-details" class="lsec" role="tabpanel" hidden>${listingDetailsTabHtml(props)}</div>
@@ -1710,7 +1714,7 @@ function listingDetailsTabHtml(props) {
   if (!body) {
     return `<div class="empty-state"><b>No premises details for this listing</b><p>Idealista didn't publish characteristics or a description for it, or it hasn't been scraped in full yet.</p>${idealistaLink(props.u, "Check the ad on Idealista")}</div>`;
   }
-  return `${body}${idealistaLink(props.u)}`;
+  return body;
 }
 
 function areaModalContent(props) {
@@ -1841,11 +1845,10 @@ function ageChartHtml(p) {
   const diff = cityMed != null && p.age_median != null ? p.age_median - cityMed : null;
   const cmp = diff == null ? "" : Math.abs(diff) < 1.5 ? `about the ${escapeHtml(p.city)} norm` : `${Math.abs(Math.round(diff))} yrs ${diff > 0 ? "older" : "younger"} than ${escapeHtml(p.city)}`;
   return `<section class="flat agec2">
-    <h3 class="flat__h">Who lives here</h3>
+    <h3 class="flat__h">Who lives here${infoTip(`Share of residents by age, municipal census (Padrón) 2026 — ${p.city === "Barcelona" ? "Open Data BCN" : "datos.madrid.es"}.`)}</h3>
     <p class="agec2__head"><b>${p.age_median ?? "–"}</b> median age${cmp ? `<span>${cmp}</span>` : ""}</p>
     ${bar(p.age_bands, "Here")}${bar(avg, escapeHtml(p.city))}
     <div class="agebar__legend">${AGE_LABELS.map((l, i) => `<span><i class="agebar__seg--${i}"></i>${l}</span>`).join("")}</div>
-    <p class="unit-note">Share of residents by age. Padrón municipal 2026 (${p.city === "Barcelona" ? "Open Data BCN" : "datos.madrid.es"}).</p>
   </section>`;
 }
 
@@ -2824,7 +2827,7 @@ map.on("error", (event) => {
 });
 
 
-// Card tabs (Overview / Why / Deal / Details): one panel visible at a time.
+// Card tabs (Why / tenant / Calculator / Details): one panel visible at a time.
 document.addEventListener("click", (event) => {
   const tab = event.target.closest(".lnav [data-sec]");
   if (tab) {

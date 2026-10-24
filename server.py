@@ -155,7 +155,7 @@ class MapHandler(SimpleHTTPRequestHandler):
                 },
                 {
                     "X-Goog-Api-Key": key,
-                    "X-Goog-FieldMask": "places.displayName,places.rating,places.userRatingCount",
+                    "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.googleMapsUri",
                 },
             )
         except urllib.error.HTTPError as error:
@@ -176,6 +176,17 @@ class MapHandler(SimpleHTTPRequestHandler):
             "count": len(places),
             "rating": round(sum(ratings) / len(ratings), 1) if ratings else None,
             "names": names,
+            "places": [
+                {
+                    "name": (p.get("displayName") or {}).get("text"),
+                    "rating": p.get("rating"),
+                    "reviews": p.get("userRatingCount") or 0,
+                    "price": {"PRICE_LEVEL_INEXPENSIVE": 1, "PRICE_LEVEL_MODERATE": 2, "PRICE_LEVEL_EXPENSIVE": 3, "PRICE_LEVEL_VERY_EXPENSIVE": 4}.get(p.get("priceLevel")),
+                    "url": p.get("googleMapsUri") or (f"https://www.google.com/maps/place/?q=place_id:{p['id']}" if p.get("id") else None),
+                }
+                for p in places
+                if (p.get("displayName") or {}).get("text")
+            ],
         }
         NEARBY_CACHE[cache_key] = result
         self.send_json(result)

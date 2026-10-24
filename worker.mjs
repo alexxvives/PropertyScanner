@@ -250,7 +250,7 @@ async function handleNearby(request, env, ctx) {
   const kind = url.searchParams.get("kind") || "bakery";
   if (!(kind in PLACE_TYPES)) return json({ error: "Unknown kind" }, 400);
   if (!Number.isFinite(lon) || !Number.isFinite(lat)) return json({ error: "Need a longitude and a latitude" }, 400);
-  const cacheKey = `nearby2:${lon.toFixed(4)}:${lat.toFixed(4)}:${kind}`;
+  const cacheKey = `nearby3:${lon.toFixed(4)}:${lat.toFixed(4)}:${kind}`;
   const cached = await cacheGet(env, cacheKey);
   if (cached) return json(cached, 200, "HIT");
   const types = PLACE_TYPES[kind];
@@ -259,7 +259,7 @@ async function handleNearby(request, env, ctx) {
     headers: {
       "Content-Type": "application/json",
       "X-Goog-Api-Key": googleKey,
-      "X-Goog-FieldMask": "places.displayName,places.rating,places.userRatingCount",
+      "X-Goog-FieldMask": "places.id,places.displayName,places.rating,places.userRatingCount,places.priceLevel,places.googleMapsUri",
     },
     body: JSON.stringify({
       includedPrimaryTypes: types, // primary only: supermarkets list "bakery" as a secondary type
@@ -276,10 +276,20 @@ async function handleNearby(request, env, ctx) {
     .slice(0, 3)
     .map((p) => p.displayName?.text)
     .filter(Boolean);
+  const PRICE = { PRICE_LEVEL_INEXPENSIVE: 1, PRICE_LEVEL_MODERATE: 2, PRICE_LEVEL_EXPENSIVE: 3, PRICE_LEVEL_VERY_EXPENSIVE: 4 };
   const result = {
     count: places.length,
     rating: ratings.length ? Math.round((ratings.reduce((a, b) => a + b, 0) / ratings.length) * 10) / 10 : null,
     names,
+    places: places
+      .filter((p) => p.displayName?.text)
+      .map((p) => ({
+        name: p.displayName.text,
+        rating: typeof p.rating === "number" ? p.rating : null,
+        reviews: p.userRatingCount || 0,
+        price: PRICE[p.priceLevel] || null,
+        url: p.googleMapsUri || (p.id ? `https://www.google.com/maps/place/?q=place_id:${p.id}` : null),
+      })),
   };
   await cachePut(env, ctx, cacheKey, result, NEARBY_TTL);
   return json(result, 200, "MISS");

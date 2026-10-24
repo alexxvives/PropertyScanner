@@ -2051,5 +2051,5 @@ body.has-modal {
 .donut__k { font: 600 5px Outfit, sans-serif; }
 .donut__v { font: 700 8.5px Outfit, sans-serif; }
 .donut__p { font: 5px Outfit, sans-serif; fill: var(--muted); }
-.ldesc2__src { margin: 0 0 6px; }
+.ldesc2__src { margin: 0 0 6px; font-size: 12px; color: var(--muted); font-style: italic; }
 .ldesc2__langs { flex-wrap: wrap; }

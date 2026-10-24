@@ -187,7 +187,11 @@ const INV_ROWS = [
   ["community_costs_month", "Community costs"],
   ["energy_class", "Energy class"],
   ["agency", "Agency"],
+  ["contact_name", "Contact"],
   ["phone", "Phone"],
+  ["agency_ref", "Agency ref."],
+  ["advertiser_type", "Advertiser"],
+  ["listing_code", "Idealista code"],
 ];
 
 function investorFieldsHtml(props) {
@@ -196,11 +200,61 @@ function investorFieldsHtml(props) {
     let v = inv[k];
     if (k === "days_on_market") v = `${v} days (tracked since ${inv.first_seen})`;
     if (k === "community_costs_month") v = `${v} €/month`;
+    if (k === "advertiser_type") v = v === "private" ? "Private owner" : "Agency / professional";
+    if (k === "phone") return `<div class="fact"><dt>${label}</dt><dd><a href="tel:${escapeHtml(String(v).replace(/\s/g, ""))}">${escapeHtml(String(v))}</a></dd></div>`;
     return `<div class="fact"><dt>${escapeHtml(label)}</dt><dd>${escapeHtml(String(v))}</dd></div>`;
   });
   return `<section class="card-section investor-fields">
     <h3 class="card-section__title">The premises</h3>
     <dl class="facts">${rows.join("")}</dl>
+    ${energyHtml(inv)}
+    ${inv.admin_levels?.length ? `<p class="inv-admin">${inv.admin_levels.map(escapeHtml).join(" › ")}${inv.country ? ` · ${escapeHtml(inv.country.toUpperCase())}` : ""}</p>` : ""}
+  </section>`;
+}
+
+function energyHtml(inv) {
+  const e = inv.energy || {};
+  if (!e.class && !e.note) return "";
+  const num = (s) => (String(s || "").match(/([\d.]+)\s*$/) || [])[1];
+  const classes = ["A", "B", "C", "D", "E", "F", "G"];
+  const scale = e.class ? `<div class="energy-scale">${classes.map((c) => `<span class="e-${c}${c === e.class ? " is-on" : ""}">${c}</span>`).join("")}</div>` : "";
+  const bits = [num(e.consumption) && `${num(e.consumption)} kWh/m²·yr`, num(e.emissions) && `${num(e.emissions)} kg CO₂/m²·yr`, e.note].filter(Boolean);
+  return `<div class="energy"><span class="energy__label">Energy certificate</span>${scale}${bits.length ? `<span class="energy__nums">${bits.map(escapeHtml).join(" · ")}</span>` : ""}</div>`;
+}
+
+/** Listing activity: Idealista public stats + price-drop trend + ad flags. */
+function listingActivityHtml(inv) {
+  const a = inv.activity || {};
+  const stat = (n, label) => `<div class="act-stat"><b>${n ?? "–"}</b><span>${label}</span></div>`;
+  const stats = Object.keys(a).length
+    ? `<div class="act-stats">${stat(a.views, "views")}${stat(a.favorites, "favourites")}${stat(a.contacts, "contacts")}${stat(a.shared, "shared")}</div>`
+    : `<p class="act-none">Views / favourites only come from the detail page (not scraped for this lead).</p>`;
+  const flags = [];
+  if (inv.price_drop_pct) {
+    const when = inv.price_drop_date_ms ? ` on ${new Date(inv.price_drop_date_ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}` : "";
+    flags.push(`<span class="act-flag act-flag--drop">▼ Price cut ${inv.price_drop_pct}%${inv.price_drop_eur ? ` (−${dealFmtEuro(inv.price_drop_eur)})` : ""}${when}</span>`);
+  }
+  if (inv.highlighted) flags.push(`<span class="act-flag act-flag--ad" title="The advertiser pays Idealista to highlight this ad">★ Paid highlight (Destacado)</span>`);
+  if (inv.new_dev_highlight) flags.push(`<span class="act-flag">New development</span>`);
+  if (inv.auction) flags.push(`<span class="act-flag act-flag--warn">Auction</span>`);
+  if (inv.transfer) flags.push(`<span class="act-flag act-flag--warn" title="A running business is being transferred">Traspaso (business transfer)</span>`);
+  (inv.labels || []).forEach((l) => flags.push(`<span class="act-flag">${escapeHtml(l)}</span>`));
+  if (inv.days_on_market !== undefined) flags.push(`<span class="act-flag act-flag--muted">Seen ${inv.days_on_market} d ago</span>`);
+  if (inv.updated_ms) flags.push(`<span class="act-flag act-flag--muted">Updated ${new Date(inv.updated_ms).toLocaleDateString("en-GB", { day: "numeric", month: "short" })}</span>`);
+  return `<section class="card-section lact">
+    <h3 class="card-section__title">Listing activity</h3>
+    ${stats}
+    ${flags.length ? `<div class="act-flags">${flags.join("")}</div>` : ""}
+  </section>`;
+}
+
+/** Equipment / features chips (all characteristics + "Yes" extras). */
+function listingFeaturesHtml(inv) {
+  const chips = [...(inv.features || []), ...(inv.media || [])];
+  if (!chips.length) return "";
+  return `<section class="card-section lfeat">
+    <h3 class="card-section__title">Equipment &amp; features</h3>
+    <div class="chips">${chips.map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}</div>
   </section>`;
 }
 

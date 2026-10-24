@@ -716,8 +716,85 @@ def curate_listing(props: dict, detail: dict, first_seen: dict[str, str], today:
         "energy_class": (raw.get("moreCharacteristics.Energy certificate class") or "").upper().replace("—", ""),
         "agency": detail.get("agency") or "",
         "phone": detail.get("phone") or "",
+        # --- round 3 (Alex's field review, see ps-fields-final.csv) ---
+        "contact_name": detail.get("contactName") or "",
+        "agency_logo": detail.get("agencyLogo") or "",
+        "agency_ref": detail.get("ref") or "",
+        "advertiser_type": detail.get("userType") or "",
+        "currency": detail.get("currency") or "€",
+        "country": raw.get("card.country") or raw.get("country") or "es",
+        "admin_levels": [raw.get(f"ubication.administrativeAreaLevel{i}") for i in (1, 2, 3, 4)
+                         if raw.get(f"ubication.administrativeAreaLevel{i}")],
+        "location_code": detail.get("locId") or "",
+        "listing_code": detail.get("propCode") or str(props.get("id") or ""),
+        "state": raw.get("state") or "",
+        "updated_ms": _num(raw.get("modificationDate.value")),
+        "activity": _activity(detail),
+        "highlighted": bool(detail.get("highlight") or detail.get("prefHighlight")),
+        "new_dev_highlight": raw.get("card.newDevelopmentHighlight") == "Yes",
+        "auction": raw.get("moreCharacteristics.Auction listing") == "Yes",
+        "transfer": bool(detail.get("transfer")) or raw.get("detailedType.transfer") == "Yes",
+        "labels": detail.get("labels") or [],
+        "price_drop_pct": _num(detail.get("priceDropPct")),
+        "price_drop_eur": _num(detail.get("priceDropVal")),
+        "price_drop_date_ms": _num(detail.get("dropDate")),
+        "energy": {k: v for k, v in {
+            "class": (raw.get("moreCharacteristics.Energy certificate class") or "").upper().replace("—", ""),
+            "consumption": raw.get("energyCertification.energyConsumption") or "",
+            "emissions": raw.get("energyCertification.emissions") or "",
+            "note": raw.get("energyCertification.text") or "",
+        }.items() if v},
+        "features": _features(detail),
+        "media": [m for m, on in (("Floor plan", detail.get("hasPlan")), ("Video", detail.get("hasVideo")),
+                                  ("360° tour", detail.get("has360"))) if on],
+        "photo_count": detail.get("photos") or 0,
+        "thumb": detail.get("thumb") or "",
+        "photo_tags": (detail.get("imgTags") or [])[:16],
+        "desc_ca": raw.get("comments.ca") or "",
+        "title_en": raw.get("suggestedTexts.title") or "",
     }
-    return {k: v for k, v in inv.items() if v not in ("", None, [])}
+    keep_zero = {"days_on_market"}
+    return {k: v for k, v in inv.items() if k in keep_zero or v not in ("", None, [], {}, False, 0)}
+
+
+def _activity(detail: dict) -> dict:
+    stats = detail.get("stats") or {}
+    out = {}
+    for key, label in (("views", "views"), ("favorites", "favorites"), ("contactMails", "contacts"), ("sentToFriend", "shared")):
+        v = stats.get(key)
+        v = v.get("value") if isinstance(v, dict) else v
+        if v is not None:
+            out[label] = int(_num(v) or 0)
+    return out
+
+
+FEATURE_SKIP = re.compile(r"(price|m² constructed|m² floor|community costs)", re.IGNORECASE)
+
+
+def _features(detail: dict) -> list[str]:
+    """All characteristics + 'Yes' moreCharacteristics, deduplicated, as short chips."""
+    raw = detail.get("idealista") or {}
+    chips: list[str] = []
+    for key, value in raw.items():
+        if key.startswith("characteristics.") and ".Price." not in key and value and not FEATURE_SKIP.search(str(value)):
+            chips.append(str(value))
+    for key, value in raw.items():
+        if key.startswith("moreCharacteristics.") and value == "Yes":
+            chips.append(key.split(".", 1)[1])
+    if detail.get("ac"):
+        chips.append("Air conditioning")
+    seen, out = set(), []
+    for chip in chips:
+        k = chip.lower().replace("smoke outlet", "smoke extractor").replace("storeroom/archive", "storeroom / archive")
+        if k not in seen:
+            seen.add(k)
+            out.append(chip)
+    return out
+
+
+def is_inactive(props: dict) -> bool:
+    state = ((props.get("x") or {}).get("idealista") or {}).get("state")
+    return bool(state) and state != "active"
 
 
 def save_first_seen(first_seen: dict[str, str]) -> None:
@@ -729,6 +806,9 @@ def recurate_existing() -> None:
     collection = json.loads(OUT.read_text(encoding="utf-8"))
     first_seen = load_first_seen()
     today = date.today().isoformat()
+    before = len(collection["features"])
+    collection["features"] = [f for f in collection["features"] if not is_inactive(f["properties"])]
+    print(f"excluded {before - len(collection['features'])} inactive listings")
     for feature in collection["features"]:
         props = feature["properties"]
         props["inv"] = curate_listing(props, props.get("x") or {}, first_seen, today)
@@ -742,6 +822,11 @@ INVESTOR_FIELDS = [
     "price", "size_m2", "price_m2", "location", "floor", "storefront", "condition",
     "current_use", "link", "photos", "first_seen", "days_on_market", "price_drop",
     "community_costs_month", "energy_class", "agency", "phone",
+    "contact_name", "agency_logo", "agency_ref", "advertiser_type", "currency", "country",
+    "admin_levels", "location_code", "listing_code", "state", "updated_ms", "activity",
+    "highlighted", "new_dev_highlight", "auction", "transfer", "labels", "price_drop_pct",
+    "price_drop_eur", "price_drop_date_ms", "energy", "features", "media", "photo_count",
+    "thumb", "photo_tags", "desc_ca", "title_en",
 ]
 
 
@@ -771,6 +856,10 @@ def main() -> None:
         if lon is None or lat is None:
 
             continue
+
+        state = str(item.get("state") or (item.get("_details") or {}).get("state") or "").lower()
+        if state and state != "active":
+            continue  # Alex: never show inactive listings
 
         area = index.find(float(lon), float(lat))
 

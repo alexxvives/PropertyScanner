@@ -65,6 +65,13 @@
     </aside>
 
     <aside class="ranking-panel glass">
+      <div class="sheet-bar" aria-hidden="false">
+        <button type="button" class="sheet-handle" id="sheet-handle" aria-label="Expand or collapse rankings"><span></span></button>
+        <div class="sheet-tabs" role="tablist">
+          <button type="button" role="tab" data-sheet-tab="areas" class="is-on">Neighbourhoods</button>
+          <button type="button" role="tab" data-sheet-tab="listings">Listings</button>
+        </div>
+      </div>
       <section class="sidebar-rank listing-rank" aria-labelledby="listing-ranking-title">
         <h2 class="ranking-heading" id="listing-ranking-title">Property ranking · bakery</h2>
         <ol id="listing-ranking" class="ranking" aria-busy="true"></ol>

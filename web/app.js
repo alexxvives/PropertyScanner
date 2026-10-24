@@ -707,7 +707,7 @@ function paintAreaFillOpacity() {
   if (!map?.getLayer?.(MAP_LAYERS.areasFill)) return;
   const dark = state.mapStyle === "satellite";
   const opacity = dark
-    ? ["interpolate", ["linear"], ["zoom"], 6, 0.32, 9, 0.82, 12, 0.78, 13, 0.48, 14, 0.24, 16, 0.14]
+    ? ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.42, 12, 0.38, 13, 0.26, 14, 0.14, 16, 0.08]
     : ["interpolate", ["linear"], ["zoom"], 6, 0.2, 9, 0.78, 12, 0.74, 13, 0.42, 14, 0.18, 16, 0.08];
   map.setPaintProperty(MAP_LAYERS.areasFill, "fill-opacity", opacity);
 }
@@ -1424,7 +1424,7 @@ function whyRowHtml(row, areaProps) {
   return `<li class="why-row">
     <div class="why-row__top"><span class="why-row__name">${escapeHtml(row.name)}</span>${tag}</div>
     <div class="why-row__val">${escapeHtml(row.fmt(value, areaProps))}</div>
-    <div class="why-row__pct" title="Percentile vs ${escapeHtml(areaProps.city)} neighbourhoods"><span class="nbars__track"><span style="width:${pct ?? 0}%"></span></span><em>P${pct ?? "–"} in ${escapeHtml(areaProps.city)}</em></div>
+    <div class="why-row__pct" title="Percentile vs ${escapeHtml(areaProps.city)} neighbourhoods"><span class="why-bar${row.invert ? " why-bar--inv" : ""}"><i style="width:${100 - (pct ?? 0)}%"></i></span><em>P${pct ?? "–"} in ${escapeHtml(areaProps.city)}</em></div>
     <p class="why-row__line">${escapeHtml(line)}</p>
   </li>`;
 }
@@ -1433,7 +1433,8 @@ function whyScoreHtml(areaProps) {
   const parts = (areaProps.parts || []).slice();
   const byValue = parts.slice().sort((a, b) => b.value - a.value);
   const strengths = byValue.filter((p) => p.value >= 0.5).slice(0, 3);
-  const weaknesses = byValue.slice().reverse().filter((p) => p.value < 0.5).slice(0, 3);
+  // Only genuinely weak signals: below 0.4 and not described as neutral/"balanced".
+  const weaknesses = byValue.slice().reverse().filter((p) => p.value < 0.4 && !/balanced|average|typical/i.test(p.line || "")).slice(0, 3);
   const li = (p) => `<li><b>${escapeHtml(p.label)}</b><span>${escapeHtml(p.line)}</span></li>`;
   const groups = WHY_GROUPS.map((g) => {
     const rows = g.rows.map((r) => whyRowHtml(r, areaProps)).join("");
@@ -1509,18 +1510,31 @@ function listingModalContent(props) {
     ${listingHeroHtml(images, props.u)}
     <header class="lhead">
       <div class="lhead__text">
-        <div class="tag-row"><span class="status-pill">Commercial premises</span><span class="status-pill status-pill--sale">For sale</span>${listingEngagementTagsHtml(detail)}</div>
+        <div class="tag-row"><span class="status-pill">Commercial premises</span><span class="status-pill status-pill--sale">For sale</span>${props.inv?.highlighted ? `<span class="status-pill status-pill--ad">★ Highlighted</span>` : ""}${props.inv?.price_drop_pct ? `<span class="status-pill status-pill--drop">▼ ${props.inv.price_drop_pct}%</span>` : ""}</div>
         <h2>${escapeHtml(listingHeadline(props))}</h2>
         ${location ? `<p class="pin-row">${PIN_ICON}<span>${escapeHtml(location)}</span></p>` : ""}
       </div>
     </header>
     ${kpis}
-    ${partialNote}
-    ${listingFitHtml(areaProps, concept)}
-    ${investorFieldsHtml(props)}
-    ${dealCalculatorHtml(props, coords, state.listings)}
-    ${desc}
-    ${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}
+    <nav class="lnav" aria-label="Card sections">
+      <a href="#sec-overview" data-sec="sec-overview">Overview</a>
+      <a href="#sec-why" data-sec="sec-why">Why this score</a>
+      ${dm ? `<a href="#sec-deal" data-sec="sec-deal">Deal</a>` : ""}
+      <a href="#sec-details" data-sec="sec-details">Details</a>
+    </nav>
+    <div id="sec-overview" class="lsec">
+      ${partialNote}
+      ${listingActivityHtml(props.inv || {})}
+      ${listingFeaturesHtml(props.inv || {})}
+    </div>
+    <div id="sec-why" class="lsec">${listingFitHtml(areaProps, concept)}</div>
+    <div id="sec-deal" class="lsec">${dealCalculatorHtml(props, coords, state.listings)}</div>
+    <div id="sec-details" class="lsec">
+      ${investorFieldsHtml(props)}
+      ${props.inv?.desc_ca ? `<details class="card-section ldesc"><summary>Descripció (català)</summary><div class="listing-desc listing-desc--full">${escapeHtml(props.inv.desc_ca)}</div></details>` : ""}
+      ${desc}
+      ${rawDetailsToggle(listingSpecsHtml(detail, props, { showEmpty: true }))}
+    </div>
   </article>`;
 }
 
@@ -1960,9 +1974,9 @@ function refreshCities() {
 }
 
 function mapPadding() {
-  const narrow = window.innerWidth <= 760;
+  const narrow = window.innerWidth <= 1024;
   if (narrow) {
-    return { left: 24, right: 24, top: 200, bottom: Math.round(window.innerHeight * 0.44) };
+    return { left: 24, right: 24, top: window.innerWidth > 760 ? 40 : 200, bottom: Math.round(window.innerHeight * 0.44) };
   }
   return { left: 390, right: 500, top: 30, bottom: 30 };
 }
@@ -2604,3 +2618,42 @@ map.on("error", (event) => {
   console.error(event.error || event);
 });
 
+
+// Card section nav (Overview / Why / Deal / Details): smooth-scroll inside the modal.
+document.addEventListener("click", (event) => {
+  const link = event.target.closest(".lnav a[data-sec]");
+  if (!link) return;
+  event.preventDefault();
+  document.getElementById(link.dataset.sec)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  link.parentElement.querySelectorAll("a").forEach((a) => a.classList.toggle("is-on", a === link));
+});
+
+// ---- Responsive: on phones the area ranking moves into the bottom sheet (tabs: Neighbourhoods / Listings).
+(function responsiveLayout() {
+  const phone = window.matchMedia("(max-width: 1024px)");
+  const panel = document.querySelector(".ranking-panel");
+  const search = document.querySelector(".search-card");
+  const areaRank = document.querySelector(".area-rank");
+  if (!panel || !search || !areaRank) return;
+  const setTab = (tab) => {
+    panel.dataset.tab = tab;
+    panel.querySelectorAll("[data-sheet-tab]").forEach((b) => b.classList.toggle("is-on", b.dataset.sheetTab === tab));
+  };
+  const apply = () => {
+    if (phone.matches) {
+      if (areaRank.parentElement !== panel) panel.insertBefore(areaRank, panel.querySelector(".listing-rank"));
+      if (!panel.dataset.tab) setTab("areas");
+    } else if (areaRank.parentElement !== search) {
+      search.appendChild(areaRank);
+      panel.classList.remove("is-expanded");
+    }
+    if (typeof map !== "undefined" && map?.resize) setTimeout(() => map.resize(), 50);
+  };
+  panel.addEventListener("click", (event) => {
+    const tab = event.target.closest("[data-sheet-tab]");
+    if (tab) { setTab(tab.dataset.sheetTab); panel.classList.add("is-expanded"); }
+    if (event.target.closest("#sheet-handle")) panel.classList.toggle("is-expanded");
+  });
+  phone.addEventListener("change", apply);
+  apply();
+})();

@@ -3298,7 +3298,7 @@ document.addEventListener("click", (event) => {
 document.addEventListener("pointerover", (event) => {
   const seg = event.target.closest(".donut [data-seg]");
   const donut = event.target.closest(".donut");
-  if (!donut) return;
+  if (!donut || donut.classList.contains("pdonut")) return;
   const idx = seg?.dataset.seg;
   donut.classList.toggle("is-hover", idx != null);
   donut.querySelectorAll("[data-seg]").forEach((el) => el.classList.toggle("is-on", el.dataset.seg === idx));

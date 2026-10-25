@@ -1932,7 +1932,7 @@ function shopsDonutHtml(p, concept) {
     off += (C * s.v) / tot;
     return out;
   }).join("");
-  return `<div class="donut" data-total="${formatNumber(tot)}">
+  return `<div class="donut pdonut" data-total="${formatNumber(tot)}">
     <div class="donut__fig"><svg viewBox="0 0 112 112" role="img" aria-label="Premises: ${segs.map((s) => `${s.name} ${s.v}`).join(", ")}"><g transform="rotate(-90 56 56)">${arcs}</g><text x="56" y="55" text-anchor="middle" class="donut__n">${formatNumber(tot)}</text><text x="56" y="69" text-anchor="middle" class="donut__s">premises</text></svg></div>
     <ul class="donut__legend">${segs.map((s, i) => `<li data-i="${i}" tabindex="0"><i class="${s.cls}"></i><span>${escapeHtml(s.name)}</span><b>${formatNumber(s.v)}</b><small>${pct(s.v)}</small></li>`).join("")}</ul></div>`;
 }
@@ -1947,12 +1947,12 @@ function donutFocus(donut, i) {
   s.textContent = seg ? seg.dataset.l.split(" · ")[1] : "premises";
 }
 ["pointerover", "focusin"].forEach((type) => document.addEventListener(type, (event) => {
-  const el = event.target.closest?.(".donut [data-i]");
-  const d = event.target.closest?.(".donut");
+  const el = event.target.closest?.(".pdonut [data-i]");
+  const d = event.target.closest?.(".pdonut");
   if (d) donutFocus(d, el ? el.dataset.i : null);
 }));
 document.addEventListener("pointerout", (event) => {
-  const d = event.target.closest?.(".donut");
+  const d = event.target.closest?.(".pdonut");
   if (d && !d.contains(event.relatedTarget)) donutFocus(d, null);
 });
 

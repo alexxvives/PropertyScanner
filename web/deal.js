@@ -436,22 +436,39 @@ function listingDescToggleHtml(props) {
   const rank = { orig: 0, adv: 1, auto: 2, unknown: 3, stub: 4 };
   items.sort((x, y) => rank[x.kind] - rank[y.kind]);
   // Advertiser versions are separate texts the advertiser typed per language on Idealista (not machine
-  // translations). Most are a faithful translation of the original; when one says the same thing
-  // (similar length and the same figures), keep a single copy and prefer English.
-  const nums = (t) => new Set(String(t).match(/\d+/g) || []);
+  // translations). The original (usually Spanish) is the trusted text; a version that says the same is hidden,
+  // one that differs gets its differing figures flagged.
+  // Figures in a text, keyed by numeric value (70,40 = 70.40 = 70.4; 1.200 = 1200) with the unit kept for display.
+  const toks = (t) => {
+    const unit = (u) => (!u ? "" : /^(m2|m²|metros?|mts?)$/i.test(u) ? " m²" : /^(€|eur|euros?)$/i.test(u) ? " €" : ` ${u.toLowerCase()}`);
+    const out = new Map();
+    for (const m of String(t).matchAll(/(\d[\d.,]*\d|\d)\s*(m²|m2|metros?|mts?|€|eur(?:os?)?|%|kw|kva)?/gi)) {
+      const raw = m[1];
+      const n = Number(/[.,]\d{3}$/.test(raw) && !/[.,]\d{1,2}[.,]/.test(raw) && raw.split(/[.,]/).length >= 2 && !/^0/.test(raw) ? raw.replace(/[.,]/g, "") : raw.replace(/\.(?=\d{3}(\D|$))/g, "").replace(",", "."));
+      if (!Number.isFinite(n)) continue;
+      const k = String(n);
+      const sig = n >= 10 || !!m[2];
+      if (!out.has(k) || m[2]) out.set(k, { t: `${raw}${unit(m[2])}`, sig: sig || out.get(k)?.sig });
+    }
+    return out;
+  };
   const sameContent = (a, b) => {
     const r = norm(b.text).length / Math.max(1, norm(a.text).length);
-    const na = nums(a.text), nb = nums(b.text);
-    const union = new Set([...na, ...nb]).size;
-    const jac = union ? [...na].filter((x) => nb.has(x)).length / union : 1;
-    return union <= 1 ? r >= 0.85 && r <= 1.2 : r >= 0.75 && r <= 1.35 && jac >= 0.75;
+    const na = toks(a.text), nb = toks(b.text);
+    const diff = [...na].some(([k, v]) => v.sig && !nb.has(k)) || [...nb].some(([k, v]) => v.sig && !na.has(k));
+    return !diff && r >= 0.7 && r <= 1.4;
   };
-  const advEn = items.find((i) => i.k === "en" && i.kind === "adv");
-  const origEs = items.find((i) => i.k === "es" && i.kind === "orig");
-  if (advEn && origEs && sameContent(origEs, advEn)) {
-    advEn.extra = "The advertiser also wrote it in Spanish with the same content.";
-    items = items.filter((i) => i !== origEs && !(i.kind === "adv" && i.k !== "en" && sameContent(advEn, i)));
-    items.sort((x, y) => (x === advEn ? -1 : y === advEn ? 1 : 0));
+  const orig0 = items.find((i) => i.kind === "orig");
+  if (orig0) {
+    const drop = new Set();
+    items.forEach((i) => {
+      if (i.kind !== "adv") return;
+      if (sameContent(orig0, i)) { drop.add(i); orig0.extra = `${orig0.extra || ""} The advertiser's ${LANG[i.k]} version says the same, so it is hidden.`.trim(); return; }
+      const a = toks(orig0.text), b = toks(i.text);
+      i.diffs = { only0: [...a].filter(([k, v]) => v.sig && !b.has(k)).map(([, v]) => v.t).slice(0, 8), only1: [...b].filter(([k, v]) => v.sig && !a.has(k)).map(([, v]) => v.t).slice(0, 8), ratio: norm(i.text).length / Math.max(1, norm(orig0.text).length) };
+      orig0.diffWith = i;
+    });
+    items = items.filter((i) => !drop.has(i));
   }
   const snippet = norm(props.x?.desc);
   // the search-card text is a whitespace-collapsed, truncated copy of the original: only show it if nothing else exists
@@ -472,10 +489,23 @@ function listingDescToggleHtml(props) {
   });
   const label = (i) => i.kind === "snip" ? "Search-card snippet" : `${KIND[i.kind][0]} · ${LANG[i.k]}`;
   const note = (i) => i.kind === "snip" ? "Truncated text from the Idealista search results." : `${KIND[i.kind][1]}${i.extra ? ` ${i.extra}` : ""}`;
+  const diffHtml = (i) => {
+    const d = i.diffs || i.diffWith?.diffs;
+    if (!d) return "";
+    const other = i.diffs ? i : i.diffWith;
+    const L0 = LANG[orig0.k], L1 = LANG[other.k];
+    const chips = (arr, cls) => arr.map((x) => `<span class="ddiff__chip ${cls}">${escapeHtml(x)}</span>`).join("");
+    const rows = [
+      d.only0.length ? `<li><span class="ddiff__lbl">Only in ${L0}</span>${chips(d.only0, "ddiff__chip--a")}</li>` : "",
+      d.only1.length ? `<li><span class="ddiff__lbl">Only in ${L1}</span>${chips(d.only1, "ddiff__chip--b")}</li>` : "",
+      d.ratio < 0.7 || d.ratio > 1.4 ? `<li><span class="ddiff__lbl">Length</span><span class="ddiff__len"><i style="width:${Math.min(100, Math.round(d.ratio * 100))}%"></i></span><small>${L1} is ${Math.round(d.ratio * 100)}% of the ${L0}</small></li>` : "",
+    ].join("");
+    return rows ? `<div class="ddiff" role="note"><p class="ddiff__h">⚠ ${L0} and ${L1} texts differ — trust the ${L0} original</p><ul>${rows}</ul></div>` : "";
+  };
   const btns = items.length > 1 ? `<div class="ldesc2__langs" role="group" aria-label="Description source">${items.map((i, n) => `<button type="button" data-lang="${i.k}" class="${n ? "" : "is-on"}">${escapeHtml(label(i))}</button>`).join("")}</div>` : "";
   return `<section class="card-section ldesc2">
     <div class="ldesc2__head"><h3 class="card-section__title">Description</h3>${btns}</div>
-    ${items.map((i, n) => `<div data-text="${i.k}"${n ? " hidden" : ""}><p class="unit-note ldesc2__src">${escapeHtml(items.length > 1 ? note(i) : `${label(i)} — ${note(i)}`)}</p><div class="listing-desc listing-desc--full">${escapeHtml(i.text)}</div></div>`).join("")}
+    ${items.map((i, n) => `<div data-text="${i.k}"${n ? " hidden" : ""}>${diffHtml(i)}<p class="unit-note ldesc2__src">${escapeHtml(items.length > 1 ? note(i) : `${label(i)} — ${note(i)}`)}</p><div class="listing-desc listing-desc--full">${escapeHtml(i.text)}</div></div>`).join("")}
   </section>`;
 }
 

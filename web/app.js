@@ -1486,9 +1486,9 @@ function nearbyPlacesBlock(nearby) {
 function walkBreakdownHtml(scored, nearby) {
   const city = scored.city || "the city";
   const rows = scored.parts.map((p) => wvRowHtml({ name: p.label, tip: p.tip, dir: p.dir, pct: p.pct, city, small: p.detail })).join("");
-  return `${nearbyPlacesBlock(nearby)}<details class="flat-more flat-more--walk"><summary>Walk factors</summary>
+  return `${nearbyPlacesBlock(nearby)}<div class="walk-factors"><h4 class="wv-group__h">${iconSvg("footprints", "ui-icon")}Walk factors</h4>
     <div class="wv-scale"><span>Lowest in ${escapeHtml(city)}</span>${infoTip(`Each dot compares this 10-minute walk with the area around every ${city} listing (per km², so bigger walks don't win just by being bigger). Green = better for this business.`)}<span>Highest</span></div>
-    <ul class="wv-list wv-list--walk">${rows}</ul></details>`;
+    <ul class="wv-list wv-list--walk">${rows}</ul></div>`;
 }
 
 function listingSpecsHtml(detail, props, options = {}) {
@@ -1719,28 +1719,65 @@ function listingRankRingHtml(props, concept) {
   return fitRingHtml(r.pct, `for ${concept}`);
 }
 
+/* Colour-coded value helpers: 0–1 value → red / orange / green. */
+function toneOf(v) { return v >= 0.6 ? "good" : v >= 0.4 ? "mid" : "bad"; }
+function cbarHtml(v) {
+  const w = Math.max(3, Math.min(100, Math.round((Number(v) || 0) * 100)));
+  return `<span class="cbar cbar--${toneOf(v)}" aria-hidden="true"><i style="width:${w}%"></i></span>`;
+}
+function cnum(v, text) { return `<b class="tone tone--${toneOf(v)}">${text}</b>`; }
+
+/** One calculation row: label, bar, value 0–100, share of the weight, points it adds. */
+function cxRowHtml(label, line, v, share, cls = "") {
+  return `<li class="cx ${cls}"><span class="cx__name">${escapeHtml(label)}${line ? `<small>${escapeHtml(line)}</small>` : ""}</span>${cbarHtml(v)}<span class="cx__v">${cnum(v, Math.round(v * 100))}</span><span class="cx__w">× ${Math.round(share * 100)}%</span><span class="cx__p">${cnum(v, (v * share * 100).toFixed(1))}</span></li>`;
+}
+const CX_HEAD = `<li class="cx cx--head" aria-hidden="true"><span class="cx__name"></span><span></span><span class="cx__v">Value</span><span class="cx__w">Weight</span><span class="cx__p">Points</span></li>`;
+
+/** How a barrio's 0–100 score is built: weighted sub-factors → rival penalty → spread to 0–100. */
+function areaCalcHtml(a) {
+  const c = a?.calc;
+  const parts = a?.parts || [];
+  if (!c || !parts.length || !c.weight) return "";
+  const rows = parts.map((p) => cxRowHtml(p.label.replace(/ per km²$/, ""), p.line, p.value, p.weight / c.weight)).join("");
+  const mid = Math.round(c.unitMix * 1000) / 10;
+  const after = Math.round(c.unit * 1000) / 10;
+  const steps = [`<li class="cx cx--sum"><span class="cx__name">Weighted average</span>${cbarHtml(c.unitMix)}<span></span><span></span><span class="cx__p">${cnum(c.unitMix, mid.toFixed(1))}</span></li>`];
+  if (c.penalty < 0.995) steps.push(`<li class="cx cx--step"><span class="cx__name">Crowded with rivals<small>Many same-type businesses already here, so the average is cut</small></span>${cbarHtml(c.unit)}<span></span><span class="cx__w cx__w--bad">× ${c.penalty.toFixed(2)}</span><span class="cx__p">${cnum(c.unit, after.toFixed(1))}</span></li>`);
+  steps.push(`<li class="cx cx--step cx--final"><span class="cx__name">Spread to 0–100<small>50 + (${after.toFixed(1)} − 50) × 1.55, kept between 4 and 96, so barrios separate</small></span>${cbarHtml(a.score / 100)}<span></span><span></span><span class="cx__p">${cnum(a.score / 100, a.score)}</span></li>`);
+  return `<ul class="cx-list cx-list--sub">${CX_HEAD}${rows}${steps.join("")}</ul>`;
+}
+
+const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Complementary shops", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"] };
+
 /** Exact, step-by-step calculation of this listing's score and rank — the same numbers score.js ranked with. */
 function scoreCalcHtml(props, areaProps) {
   const r = listingRank(props);
-  if (!r.parts?.length) return `<div class="calc__head"><h4>How this score is calculated</h4><button type="button" class="calc__x" data-open-calc aria-label="Close">×</button></div><p>Scores are still loading.</p>`;
-  const pts = (p) => (100 * p.weight * p.value).toFixed(1);
-  const head = `<thead><tr><th>Part</th><th title="0–100, where this listing sits among ${escapeHtml(r.group)} (higher is better for this business)">Value</th><th>Weight</th><th>Points</th></tr></thead>`;
-  const rows = r.parts.map((p) => `<tr><td>${escapeHtml(p.label)}<small class="calc__line">${escapeHtml(p.line)}</small></td><td>${Math.round(p.value * 100)}</td><td>${Math.round(p.weight * 100)}%</td><td><b>${pts(p)}</b></td></tr>`).join("");
-  const unit = r.parts.find((p) => p.id === "unit");
-  const unitRows = (unit?.pieces || []).map((x) => `<tr><td>${escapeHtml(x.label)}<small class="calc__line">${escapeHtml(x.text)}</small></td><td>${Math.round(x.v * 100)}</td><td>${Math.round(x.share * 100)}%</td><td>${(x.v * x.share * 100).toFixed(1)}</td></tr>`).join("");
+  const head = `<div class="calc__head"><h4>How this score is calculated</h4><button type="button" class="calc__x" data-open-calc aria-label="Close">×</button></div>`;
+  if (!r.parts?.length) return `${head}<p>Scores are still loading.</p>`;
+  const more = (p) => {
+    if (p.id === "area" && areaProps?.calc) return `<details class="cx-more"><summary>Why ${escapeHtml(areaProps.name)} scores ${areaProps.score}</summary>${areaCalcHtml(areaProps)}</details>`;
+    if (p.id === "micro" && p.sub && p.subW) {
+      const tot = Object.values(p.subW).reduce((s, w) => s + w, 0) || 1;
+      const rows = Object.keys(p.subW).map((k) => cxRowHtml(MICRO_LABELS[k]?.[0] || k, MICRO_LABELS[k]?.[1], p.sub[k], p.subW[k] / tot)).join("");
+      return `<details class="cx-more"><summary>What makes up the block score</summary><ul class="cx-list cx-list--sub">${CX_HEAD}${rows}<li class="cx cx--sum"><span class="cx__name">Block score</span>${cbarHtml(p.value)}<span></span><span></span><span class="cx__p">${cnum(p.value, (p.value * 100).toFixed(1))}</span></li></ul></details>`;
+    }
+    if (p.id === "unit" && p.pieces?.length) {
+      const rows = p.pieces.map((x) => cxRowHtml(x.label, x.text, x.v, x.share)).join("");
+      return `<details class="cx-more"><summary>Unit checks</summary><ul class="cx-list cx-list--sub">${CX_HEAD}${rows}</ul></details>`;
+    }
+    return "";
+  };
+  const rows = r.parts.map((p) => `${cxRowHtml(p.label, p.line, p.value, p.weight, "cx--main")}${more(p) ? `<li class="cx-sub">${more(p)}</li>` : ""}`).join("");
+  const sum = `<li class="cx cx--sum"><span class="cx__name">Total</span>${cbarHtml(r.base / 100)}<span></span><span></span><span class="cx__p">${cnum(r.base / 100, r.base.toFixed(1))}</span></li>`;
   const tev = state.tenant ? state.tenantEval?.get(props.id) : null;
-  const steps = [
-    `<li><b>Four parts</b><table class="calc__t">${head}<tbody>${rows}</tbody></table><p>Sum = <b>${r.base.toFixed(1)}</b>. Neighbourhood = this barrio's score for the business; block = the 300 m around the door (passing trade, rivals, complementary shops, empty units); price = €/m² against the 12 nearest comparable listings after adjusting for size (cheaper scores higher).</p></li>`,
-    unitRows ? `<li><b>The unit, in detail</b><table class="calc__t"><thead><tr><th>Check</th><th>Value</th><th>Share</th><th>Points</th></tr></thead><tbody>${unitRows}</tbody></table></li>` : "",
-    r.gates.length && tev
-      ? `<li><b>Hard requirement failed, then tenant blend</b><p>${escapeHtml(r.gates.join("; "))} → ${r.base.toFixed(1)} × ${PSScore.GATE_FACTOR}; then 60% of that + 40% × ${escapeHtml(state.tenant.name)} criteria score ${tev.soft} = <b>${r.raw}</b>.</p></li>`
-      : r.gates.length
-      ? `<li><b>Hard requirement failed</b><p>${escapeHtml(r.gates.join("; "))} → score × ${PSScore.GATE_FACTOR} = <b>${r.raw}</b>.</p></li>`
-      : tev ? `<li><b>Tenant blend</b><p>60% × ${r.base.toFixed(1)} + 40% × ${escapeHtml(state.tenant.name)} criteria score ${tev.soft} = <b>${r.raw}</b>. Listings failing a ${escapeHtml(state.tenant.name)} hard check rank last.</p></li>`
-      : `<li><b>Hard requirements</b><p>None failed, so the score stays <b>${r.raw}</b>.</p></li>`,
-    `<li><b>Rank</b><p>Against all <b>${formatNumber(r.n)}</b> ${escapeHtml(r.group)}: higher than <b>${r.pct}%</b> of them → <b>${escapeHtml(r.text)}</b>. The 10-minute walk below is shown for context and does not change the rank.</p></li>`,
-  ];
-  return `<div class="calc__head"><h4>How this score is calculated</h4><button type="button" class="calc__x" data-open-calc aria-label="Close">×</button></div><ol class="calc__steps">${steps.join("")}</ol>`;
+  const gate = r.gates.length && tev
+    ? `<li><b>Hard requirement failed, then tenant blend</b><p>${escapeHtml(r.gates.join("; "))} → ${r.base.toFixed(1)} × ${PSScore.GATE_FACTOR}; then 60% of that + 40% × ${escapeHtml(state.tenant.name)} criteria ${tev.soft} = <b>${r.raw}</b></p></li>`
+    : r.gates.length
+    ? `<li><b>Hard requirement failed</b><p>${escapeHtml(r.gates.join("; "))} → × ${PSScore.GATE_FACTOR} = <b>${r.raw}</b></p></li>`
+    : tev ? `<li><b>Tenant blend</b><p>60% × ${r.base.toFixed(1)} + 40% × ${escapeHtml(state.tenant.name)} criteria ${tev.soft} = <b>${r.raw}</b></p></li>`
+    : `<li><b>Hard requirements</b><p>✓ None failed → <b>${r.raw}</b></p></li>`;
+  const rank = `<li><b>Rank</b><div class="cx-rank">${cbarHtml(r.pct / 100)}<span>Beats ${cnum(r.pct / 100, `${r.pct}%`)} of ${formatNumber(r.n)} ${escapeHtml(r.group)}</span></div></li>`;
+  return `${head}<ol class="calc__steps"><li><b>Four parts</b><ul class="cx-list">${CX_HEAD}${rows}${sum}</ul></li>${gate}${rank}</ol>`;
 }
 
 function listingFitHtml(areaProps, concept, props) {
@@ -1752,7 +1789,6 @@ function listingFitHtml(areaProps, concept, props) {
       <button type="button" class="lfit__ring" data-open-calc aria-controls="score-calc" aria-expanded="false" title="How this score is calculated" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</button>
 
     </div>
-    <p class="unit-note lwhy__note">Score = neighbourhood, the 300 m around the door, the unit (size, street level, frontage${state.query?.id && ["food","bakery","cafe"].includes(state.query.id) ? ", smoke outlet" : ""}) and price vs nearby. Tap the ring for the maths.</p>
     ${props ? `<div class="calc" id="score-calc" hidden>${scoreCalcHtml(props, areaProps)}</div>` : ""}
     ${whyScoreHtml(areaProps)}
   </section>
@@ -1849,16 +1885,92 @@ function listingDetailsTabHtml(props) {
   return body;
 }
 
+function cityAreaPool(p) {
+  return (state.areas?.features || []).map((f) => f.properties).filter((x) => x.city === p.city && Number.isFinite(x.score) && x.score >= 0);
+}
+
+/** Radar of the barrio's sub-factors (0–100 among the city's barrios); dashed ring = city middle. */
+function areaRadarHtml(parts) {
+  if (!parts || parts.length < 3) return "";
+  const n = parts.length, cx = 130, cy = 112, R = 78;
+  const pt = (i, v) => { const a = -Math.PI / 2 + (2 * Math.PI * i) / n; return [cx + R * v * Math.cos(a), cy + R * v * Math.sin(a)]; };
+  const poly = (fn) => parts.map((p, i) => pt(i, fn(p)).map((x) => x.toFixed(1)).join(",")).join(" ");
+  const grid = [0.25, 0.5, 0.75, 1].map((g) => `<polygon points="${poly(() => g)}" class="radar__grid${g === 0.5 ? " radar__grid--mid" : ""}"/>`).join("");
+  const axes = parts.map((_, i) => { const [x, y] = pt(i, 1); return `<line x1="${cx}" y1="${cy}" x2="${x.toFixed(1)}" y2="${y.toFixed(1)}" class="radar__axis"/>`; }).join("");
+  const labels = parts.map((p, i) => {
+    const [x, y] = pt(i, 1.2);
+    const anchor = x < cx - 8 ? "end" : x > cx + 8 ? "start" : "middle";
+    const name = p.label.replace(/ per km²$/, "").replace(/^Complementary shops$/, "Complementary").replace(/^Disposable income.*/, "Income").replace(/^Closed or empty doors$/, "Empty doors").replace(/^Open premises$/, "Footfall").replace(/^This business$/, "Rivals");
+    return `<text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="${anchor}" class="radar__lbl radar__lbl--${toneOf(p.value)}">${escapeHtml(name)}</text>`;
+  }).join("");
+  const dots = parts.map((p, i) => { const [x, y] = pt(i, Math.max(0.04, p.value)); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="radar__dot radar__dot--${toneOf(p.value)}"/>`; }).join("");
+  return `<svg class="radar" viewBox="-34 0 328 224" role="img" aria-label="${escapeHtml(parts.map((p) => `${p.label} ${Math.round(p.value * 100)}`).join(", "))}">${grid}${axes}<polygon points="${poly((p) => Math.max(0.04, p.value))}" class="radar__shape"/>${dots}${labels}</svg>`;
+}
+
+/** Donut: same-type businesses, other open premises, closed premises. */
+function shopsDonutHtml(p, concept) {
+  const same = Math.max(0, p.matches || 0), open = Math.max(0, (p.open || 0) - same), closed = Math.max(0, p.vacant || 0);
+  const tot = same + open + closed;
+  if (!tot) return "";
+  const C = 2 * Math.PI * 40;
+  let off = 0;
+  const seg = (v, cls) => { const len = (C * v) / tot; const s = `<circle r="40" cx="56" cy="56" class="donut__seg ${cls}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`; off += len; return s; };
+  const pct = (v) => `${Math.round((100 * v) / tot)}%`;
+  return `<div class="donut"><svg viewBox="0 0 112 112" role="img" aria-label="Premises: ${same} ${escapeHtml(concept)}, ${open} other open, ${closed} closed"><g transform="rotate(-90 56 56)">${seg(open, "donut--open")}${seg(same, "donut--same")}${seg(closed, "donut--closed")}</g><text x="56" y="54" text-anchor="middle" class="donut__n">${formatNumber(tot)}</text><text x="56" y="68" text-anchor="middle" class="donut__s">premises</text></svg>
+    <ul class="donut__legend"><li><i class="donut--open"></i>Other open shops<b>${formatNumber(open)}</b><small>${pct(open)}</small></li><li><i class="donut--same"></i>${escapeHtml(concept[0].toUpperCase() + concept.slice(1))} (rivals)<b>${formatNumber(same)}</b><small>${pct(same)}</small></li><li><i class="donut--closed"></i>Closed or empty<b>${formatNumber(closed)}</b><small>${pct(closed)}</small></li></ul></div>`;
+}
+
+/** This barrio vs the city median, one bar per measure; the tick marks the median. */
+function areaVsCityHtml(p) {
+  const pool = cityAreaPool(p);
+  const med = (get) => { const v = pool.map(get).filter(Number.isFinite).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
+  const groups = WHY_GROUPS.map((g) => {
+    const rows = g.rows.map((row) => {
+      const v = row.get(p), m = med(row.get);
+      if (!Number.isFinite(v) || !m) return "";
+      const pct = cityPercentile(p, row.get);
+      const dir = row.dir ? row.dir() : row.invert ? "down" : "up";
+      const good = dir === "down" ? 1 - pct / 100 : dir === "mid" ? 1 - Math.abs(pct - 50) / 50 : pct / 100;
+      const w = Math.max(2, Math.min(100, (v / (2 * m)) * 100));
+      const ratio = v / m;
+      const rel = ratio >= 1.1 ? `${ratio.toFixed(1)}× avg` : ratio <= 0.9 ? `${Math.round((1 - ratio) * 100)}% below avg` : "≈ avg";
+      return `<li class="vs"><span class="vs__name">${escapeHtml(row.name)}${infoTip(typeof row.tip === "function" ? row.tip() : row.tip)}</span><span class="vs__track"><i class="cbar--${toneOf(good)}" style="width:${w.toFixed(1)}%"></i><em title="${escapeHtml(p.city)} median"></em></span><span class="vs__val">${cnum(good, escapeHtml(row.fmt(v, p)))}<small>${rel}</small></span></li>`;
+    }).join("");
+    return rows ? `<div class="wv-group"><h4 class="wv-group__h">${iconSvg(g.icon, "ui-icon")}${g.title}</h4><ul class="vs-list">${rows}</ul></div>` : "";
+  }).join("");
+  return groups ? `<section class="flat"><h3 class="flat__h">Compared with ${escapeHtml(p.city)}${infoTip(`Bar = this neighbourhood; the tick in the middle = the ${p.city} median neighbourhood. Green = good for this business, red = bad.`)}</h3><div class="wv-groups">${groups}</div></section>` : "";
+}
+
 function areaModalContent(props) {
-  const lines = neighborhoodFitLines(props, state.query);
   const concept = (state.query?.label || "your concept").toLowerCase();
+  const pool = cityAreaPool(props);
+  const rank = 1 + pool.filter((x) => x.score > props.score).length;
+  const top = pool.length ? Math.max(1, Math.round((100 * rank) / pool.length)) : null;
+  const ok = Number.isFinite(props.score) && props.score >= 0;
   return `<article class="modal-area" id="detail-modal-title">
     <h2>${escapeHtml(props.name)}</h2>
     ${locationRow(props.district, props.city)}
-    ${visitReasonHtml(props)}
-    ${modalFitSectionHtml(props, concept)}
-    ${censusBlock(lines)}
+    ${ok ? `<section class="ahero">
+      <div class="ahero__ring">${fitRingHtml(props.score, `for ${concept}`)}</div>
+      <div class="ahero__txt">
+        <p class="ahero__rank"><b>#${rank}</b> of ${pool.length} ${escapeHtml(props.city)} neighbourhoods</p>
+        <span class="cbar cbar--${toneOf(1 - (top || 50) / 100)} ahero__bar"><i style="width:${Math.max(3, 100 - (top || 50))}%"></i></span>
+        <p class="ahero__top">${top ? `Top ${top}%` : ""}</p>
+        ${visitReasonHtml(props)}
+      </div>
+    </section>
+    <section class="flat">
+      <h3 class="flat__h">What drives the score${infoTip("Each factor is where this neighbourhood ranks among the city's neighbourhoods, 0–100. The dashed ring is the middle of the city.")}</h3>
+      <div class="adrive">${areaRadarHtml(props.parts)}<div class="adrive__calc">${areaCalcHtml(props)}</div></div>
+    </section>` : `<p class="empty-state">No score for this neighbourhood yet.</p>`}
+    <section class="flat"><h3 class="flat__h">Premises in ${escapeHtml(props.name)}</h3>${shopsDonutHtml(props, concept)}</section>
+    ${areaVsCityHtml(props)}
     ${ageChartHtml(props)}
+    <section class="flat">
+      <h3 class="flat__h">10-minute walk from the centre</h3>
+      <div class="fit-score-stack"><div class="fit-score-proximity"><p class="live-note">Loads with the walk…</p></div><div class="fit-score-overall"></div></div>
+      <div class="visit-live fit-subsection fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
+    </section>
   </article>`;
 }
 

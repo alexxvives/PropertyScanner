@@ -1,6 +1,6 @@
 # Idealista property data — fields we extract
 
-Reference for **every property lead** from Apify (`igolaizola/idealista-scraper`) through ETL (`etl/import_idealista_listings.py`) into `web/data/listings.geojson` and the map UI.
+Reference for **every property lead** from Apify (`igolaizola/idealista-scraper`) through ETL (`etl/import_idealista_listings.py`) into `data/build/listings.geojson.gz (split by etl/build_web_data.py into web/data/l-*.json + d/{id}.json)` and the map UI.
 
 **Current project focus:** Madrid commercial **premises** (`propertyType: premises`), **sale** (`operation: sale`). Rent and other property types use the same Idealista shapes; only a subset has been observed in our raw files.
 
@@ -14,7 +14,7 @@ Reference for **every property lead** from Apify (`igolaizola/idealista-scraper`
 flowchart LR
   A[Apify Actor] --> B[data/raw/*.json]
   B --> C[import_idealista_listings.py]
-  C --> D[web/data/listings.geojson]
+  C --> D[data/build/listings.geojson.gz (split by etl/build_web_data.py into web/data/l-*.json + d/{id}.json)]
   D --> E[web/app.js UI]
 ```
 
@@ -479,7 +479,7 @@ These are **not** fields on the GeoJSON feature; they are calculated when you op
 **Related files:**
 
 - ETL: `etl/import_idealista_listings.py`
-- Output: `web/data/listings.geojson`
+- Output: `data/build/listings.geojson.gz (split by etl/build_web_data.py into web/data/l-*.json + d/{id}.json)`
 - Sample scrape manifest: `data/raw/mad_idealista_premises_sale_sample10.README.md`
 - UI consumption: `web/app.js` (`listing_detail`, `listingSpecSections`, `listingEngagementTagsHtml`)
 

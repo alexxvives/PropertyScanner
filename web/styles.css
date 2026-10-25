@@ -2257,3 +2257,15 @@ img.is-broken { opacity: 0; }
 /* Round 13: one floating tooltip for every (i) */
 .score-tip .score-tip__bubble, .score-tip:hover .score-tip__bubble, .score-tip:focus-visible .score-tip__bubble { display: none !important; }
 .ftip { position: fixed; z-index: 10000; max-width: 300px; padding: 9px 11px; border-radius: 8px; background: #1f1b17; color: #fff; font-size: 12.5px; line-height: 1.45; font-weight: 400; text-transform: none; letter-spacing: 0; box-shadow: 0 6px 20px rgba(0,0,0,.22); pointer-events: none; white-space: normal; }
+
+/* Round 14: centred verdict ring and median age, chip toggle, score maths lines */
+.lwhy__head { display: flex; justify-content: center; text-align: center; }
+.lwhy__note { text-align: center; margin: 10px auto 0; max-width: 60ch; }
+.agec2__head { justify-content: center; text-align: center; }
+.pchips__extra { display: contents; }
+.pchips__extra[hidden] { display: none; }
+.pchips__toggle { display: inline-flex; align-items: center; padding: 4px 10px; min-height: 28px; border: 1px dashed var(--line); border-radius: 999px; background: none; font: inherit; font-size: 12.5px; color: var(--muted); cursor: pointer; }
+.pchips__toggle:hover { color: var(--ink); border-color: var(--ink); }
+.pchips__toggle:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.calc__line { display: block; color: var(--muted); font-size: 11.5px; line-height: 1.35; margin-top: 2px; }
+.feq-extra { margin: 10px 0 0; font-size: 13px; color: var(--muted); }

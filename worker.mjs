@@ -340,7 +340,12 @@ export default {
     const response = await env.ASSETS.fetch(request);
     const headers = new Headers(response.headers);
     headers.set("X-Robots-Tag", "noindex");
-    headers.set("Cache-Control", "private, no-store");
+    // Hashed URLs (?v=<content hash>, stamped by etl/build_web_data.py) never change, so they cache for a year;
+    // everything else (index.html) revalidates with its ETag and comes back as a 304 when unchanged.
+    // With the login on, nothing may sit in a shared cache.
+    const scope = authOff ? "public" : "private";
+    const hashed = url.searchParams.has("v") && response.status === 200;
+    headers.set("Cache-Control", hashed ? `${scope}, max-age=31536000, immutable` : `${scope}, no-cache`);
     for (const [k, v] of Object.entries(SECURITY_HEADERS)) headers.set(k, v);
     return new Response(response.body, { status: response.status, headers });
   },

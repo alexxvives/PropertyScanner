@@ -442,37 +442,26 @@ function scoreBarHtml(score, label = "Fit score", withTip = false, featured = fa
 }
 
 function listingFitScore(props) {
-  const area = state.areaById?.get(props.i);
-  const areaScore = area?.properties?.score ?? 0;
-  const walkScore = state.listingWalkScores.get(props.id);
-  if (walkScore == null) return areaScore;
-  return combinedFitScore(areaScore, walkScore);
+  const s = state.scores?.get(props.id);
+  if (s) return s.raw;
+  return state.areaById?.get(props.i)?.properties?.score ?? 0;
 }
 
-/**
- * Percentile rank of a listing's raw fit among comparable listings:
- * same operation (sale/rent), same city, scored for the current business type.
- * City (not all-Spain) so Madrid and Barcelona each get their own top 10%.
- */
+/** Percentile rank among listings of the same city and operation, from score.js (computed once per scoring pass). */
 function listingRank(props) {
+  const s = state.scores?.get(props.id);
+  if (s) return s;
   const raw = listingFitScore(props);
-  const city = cityOfId(props.i) || props.m || "Madrid";
-  const op = props.op === "rent" ? "rent" : "sale";
-  let below = 0, equal = 0, n = 0;
-  for (const f of state.listings) {
-    const p = f.properties;
-    if ((p.op === "rent" ? "rent" : "sale") !== op) continue;
-    if ((cityOfId(p.i) || p.m || "Madrid") !== city) continue;
-    const s = listingFitScore(p);
-    n += 1;
-    if (s < raw) below += 1;
-    else if (s === raw) equal += 1;
-  }
-  const pct = n > 1 ? Math.round((100 * (below + Math.max(0, equal - 1) / 2)) / (n - 1)) : 100;
-  const above = Math.max(0, n - below - equal);
-  const top = Math.max(1, Math.ceil((100 * (above + Math.max(1, equal))) / Math.max(1, n)));
-  const group = `${city} ${op === "rent" ? "rentals" : "sales"}`;
-  return { raw, pct, top, n, group, text: top <= 50 ? `Top ${top}% of ${group}` : `Bottom ${Math.max(1, 100 - top + 1)}% of ${group}` };
+  const group = `${cityOfId(props.i) || props.m || "Madrid"} ${props.op === "rent" ? "rentals" : "sales"}`;
+  return { raw, pct: raw, top: 50, n: 1, group, text: group, parts: [], gates: [] };
+}
+
+function refreshScores() {
+  if (!state.listings?.length || !window.PSScore) { state.scores = new Map(); return; }
+  state.scores = PSScore.computeListingScores(state.listings, state.query?.id, state.areaById, {
+    tenant: state.tenant, tenantEval: state.tenantEval, profiles: PROFILES,
+    outlier: typeof listingOutlier === "function" ? listingOutlier : null,
+  });
 }
 
 function dedupeListingFeatures(features) {
@@ -482,6 +471,7 @@ function dedupeListingFeatures(features) {
     const detail = props.x || {};
     return (
       Number(props.full) * 1000 +
+      (detail.rich || 0) * 10 +
       (detail.basics?.length || 0) * 10 +
       (detail.desc?.length || 0) +
       (detail.imgs?.length || 0)
@@ -717,6 +707,8 @@ function scoreAreas() {
   for (const feature of state.areas.features) {
     if (state.city !== "all" && feature.properties.city !== state.city) feature.properties.score = -1;
   }
+  state.query = query;
+  refreshScores();
 }
 
 function colorStops(field) {
@@ -811,6 +803,7 @@ function renderAreaRanking() {
 
 function refreshTenantEval() {
   state.tenantEval = state.tenant && state.listings?.length ? evaluateTenant(state.tenant, state.listings, state.areaById) : null;
+  if (state.areas && state.query) refreshScores();
 }
 
 function tenantOptionHtml(t, on) {
@@ -931,7 +924,7 @@ function buildOverallRanking() {
     const ok = rows.filter((r) => r.tev.ok);
     state.tenantNearMiss = !ok.length;
     const pool = ok.length ? ok : rows;
-    return pool.sort((a, b) => a.tev.fail - b.tev.fail || b.tev.confirmed - a.tev.confirmed || b.tev.pass - a.tev.pass || a.tev.unknown - b.tev.unknown || b.tev.soft - a.tev.soft).slice(0, 14);
+    return pool.sort((a, b) => a.tev.fail - b.tev.fail || b.score - a.score).slice(0, 14);
   }
   return rankableListings()
     .sort((a, b) => {
@@ -963,6 +956,15 @@ document.addEventListener("change", (event) => {
 });
 
 document.addEventListener("click", (event) => {
+  const t = event.target.closest("[data-chips-toggle]");
+  if (t) {
+    const extra = t.previousElementSibling;
+    const open = t.getAttribute("aria-expanded") !== "true";
+    if (extra) extra.hidden = !open;
+    t.setAttribute("aria-expanded", String(open));
+    t.textContent = open ? "Show less" : t.dataset.more;
+    return;
+  }
   const b = event.target.closest("[data-tcheck]");
   if (b) {
     const box = b.closest("[data-tenant-listing]");
@@ -996,7 +998,7 @@ function renderListingRanking() {
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}${listingOutlier(item.props) ? `<span class="row-tag row-tag--warn" title="${escapeHtml(listingOutlier(item.props))}">⚠ outlier</span>` : ""}</span>
-        <span class="score-bar-wrap">${tev ? scoreBarHtml(tev.soft, `${state.tenant.name} soft score ${tev.soft}/100`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text)}</span>
+        <span class="score-bar-wrap">${tev ? scoreBarHtml(item.rank.pct, `${state.tenant.name} score ${item.rank.raw}/100 · rank ${item.rank.pct}`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text)}</span>
       </button></li>`;
         })
         .join("")
@@ -1477,7 +1479,7 @@ function nearbyPlacesBlock(nearby) {
     return `<a class="pchip" data-leave="${escapeHtml(p.name)}" href="${escapeHtml(href)}" target="_blank" rel="noopener noreferrer" title="${escapeHtml(p.name)}${p.reviews ? ` · ${p.reviews} Google reviews` : ""}"><span class="pchip__n">${escapeHtml(p.name)}</span>${meta.length ? `<span class="pchip__m">${meta.map((m, i) => i === 1 ? `<span class="pchip__r">(${m})</span>` : `<span>${m}</span>`).join("")}</span>` : ""}</a>`;
   };
   return `<div class="near-block"><p class="near-line"><b>${formatNumber(nearby.count)}</b> ${noun} within 400 m${avg}${tip}</p>
-    ${places.length ? `<div class="pchips">${places.slice(0, 3).map(chip).join("")}${places.length > 3 ? `<details class="pchips__more"><summary>+${places.length - 3} more</summary><div class="pchips">${places.slice(3, 15).map(chip).join("")}</div></details>` : ""}</div>` : ""}
+    ${places.length ? `<div class="pchips">${places.slice(0, 3).map(chip).join("")}${places.length > 3 ? `<span class="pchips__extra" hidden>${places.slice(3, 15).map(chip).join("")}</span><button type="button" class="pchips__toggle" data-chips-toggle aria-expanded="false" data-more="+${Math.min(12, places.length - 3)} more">+${Math.min(12, places.length - 3)} more</button>` : ""}</div>` : ""}
     <div class="leave-confirm" role="dialog" aria-live="polite" hidden><span></span><button type="button" class="leave-confirm__go">Open</button><button type="button" class="leave-confirm__no">Cancel</button></div></div>`;
 }
 
@@ -1714,31 +1716,29 @@ function whyScoreHtml(areaProps) {
 
 function listingRankRingHtml(props, concept) {
   const r = listingRank(props);
-  return fitRingHtml(r.pct, `${r.text} for ${concept}`);
+  return fitRingHtml(r.pct, `for ${concept}`);
 }
 
-/** Exact, step-by-step calculation of this listing's fit and rank, from the numbers in memory. */
+/** Exact, step-by-step calculation of this listing's score and rank — the same numbers score.js ranked with. */
 function scoreCalcHtml(props, areaProps) {
-  const c = areaProps.calc || {};
-  const totalW = c.weight || (areaProps.parts || []).reduce((s, p) => s + p.weight, 0) || 1;
-  const pct = (v) => `${Math.round(v * 100)}`;
-  const row = (p, w) => `<tr><td>${escapeHtml(p.label)}</td><td>${pct(p.value)}</td><td>${(100 * p.weight / w).toFixed(0)}%</td><td><b>${(100 * p.weight * p.value / w).toFixed(1)}</b></td></tr>`;
-  const head = `<thead><tr><th>Factor</th><th title="Normalised 0–100: where this place sits among ${escapeHtml(areaProps.city)} neighbourhoods (or walks), already turned the right way for this business">Value</th><th>Weight</th><th>Points</th></tr></thead>`;
-  const areaRows = (areaProps.parts || []).map((p) => row(p, totalW)).join("");
-  const unitMix = c.unitMix ?? (areaProps.parts || []).reduce((s, p) => s + p.weight * p.value, 0) / totalW;
-  const penalty = c.penalty ?? 1;
-  const walk = state.listingWalkParts.get(props.id);
-  const walkW = walk ? walk.parts.reduce((s, p) => s + p.weight, 0) || 1 : 1;
   const r = listingRank(props);
-  const raw = listingFitScore(props);
+  if (!r.parts?.length) return `<div class="calc__head"><h4>How this score is calculated</h4><button type="button" class="calc__x" data-open-calc aria-label="Close">×</button></div><p>Scores are still loading.</p>`;
+  const pts = (p) => (100 * p.weight * p.value).toFixed(1);
+  const head = `<thead><tr><th>Part</th><th title="0–100, where this listing sits among ${escapeHtml(r.group)} (higher is better for this business)">Value</th><th>Weight</th><th>Points</th></tr></thead>`;
+  const rows = r.parts.map((p) => `<tr><td>${escapeHtml(p.label)}<small class="calc__line">${escapeHtml(p.line)}</small></td><td>${Math.round(p.value * 100)}</td><td>${Math.round(p.weight * 100)}%</td><td><b>${pts(p)}</b></td></tr>`).join("");
+  const unit = r.parts.find((p) => p.id === "unit");
+  const unitRows = (unit?.pieces || []).map((x) => `<tr><td>${escapeHtml(x.label)}<small class="calc__line">${escapeHtml(x.text)}</small></td><td>${Math.round(x.v * 100)}</td><td>${Math.round(x.share * 100)}%</td><td>${(x.v * x.share * 100).toFixed(1)}</td></tr>`).join("");
+  const tev = state.tenant ? state.tenantEval?.get(props.id) : null;
   const steps = [
-    `<li><b>Neighbourhood (${escapeHtml(areaProps.name || "")})</b><table class="calc__t">${head}<tbody>${areaRows}</tbody></table>
-      <p>Weighted sum = <b>${(unitMix * 100).toFixed(1)}</b>${penalty < 0.999 ? ` × ${penalty.toFixed(2)} crowded-competition penalty = <b>${(unitMix * penalty * 100).toFixed(1)}</b>` : ""}, then spread so scores use the full 0–100 range: 50 + (x − 50) × 1.55, clamped to 4–96 → <b>${areaProps.score}</b>.</p></li>`,
-    walk
-      ? `<li><b>10-minute walk around the door</b><table class="calc__t">${head.replace(/neighbourhoods \(or walks\)/, "10-minute walks around city listings, per km²")}<tbody>${walk.parts.map((p) => row(p, walkW)).join("")}</tbody></table><p>Weighted sum → <b>${walk.score}</b>.</p></li>`
-      : `<li><b>10-minute walk</b><p>Not computed yet (it loads with the walk shape). Until then the raw fit equals the neighbourhood score.</p></li>`,
-    `<li><b>Raw fit</b><p>${walk ? `(${areaProps.score} + ${walk.score}) ÷ 2 = <b>${raw}</b>` : `<b>${raw}</b> (neighbourhood only)`}. Price is not part of it.</p></li>`,
-    `<li><b>Rank</b><p>Compared with all <b>${formatNumber(r.n)}</b> ${escapeHtml(r.group)} scored the same way: it scores higher than <b>${r.pct}%</b> of them, so the ring shows <b>${r.pct}</b> and the label reads <b>${escapeHtml(r.text)}</b>. Listings whose walk hasn't been opened use their neighbourhood score.</p></li>`,
+    `<li><b>Four parts</b><table class="calc__t">${head}<tbody>${rows}</tbody></table><p>Sum = <b>${r.base.toFixed(1)}</b>. Neighbourhood = this barrio's score for the business; block = the 300 m around the door (passing trade, rivals, complementary shops, empty units); price = €/m² against the 12 nearest comparable listings after adjusting for size (cheaper scores higher).</p></li>`,
+    unitRows ? `<li><b>The unit, in detail</b><table class="calc__t"><thead><tr><th>Check</th><th>Value</th><th>Share</th><th>Points</th></tr></thead><tbody>${unitRows}</tbody></table></li>` : "",
+    r.gates.length && tev
+      ? `<li><b>Hard requirement failed, then tenant blend</b><p>${escapeHtml(r.gates.join("; "))} → ${r.base.toFixed(1)} × ${PSScore.GATE_FACTOR}; then 60% of that + 40% × ${escapeHtml(state.tenant.name)} criteria score ${tev.soft} = <b>${r.raw}</b>.</p></li>`
+      : r.gates.length
+      ? `<li><b>Hard requirement failed</b><p>${escapeHtml(r.gates.join("; "))} → score × ${PSScore.GATE_FACTOR} = <b>${r.raw}</b>.</p></li>`
+      : tev ? `<li><b>Tenant blend</b><p>60% × ${r.base.toFixed(1)} + 40% × ${escapeHtml(state.tenant.name)} criteria score ${tev.soft} = <b>${r.raw}</b>. Listings failing a ${escapeHtml(state.tenant.name)} hard check rank last.</p></li>`
+      : `<li><b>Hard requirements</b><p>None failed, so the score stays <b>${r.raw}</b>.</p></li>`,
+    `<li><b>Rank</b><p>Against all <b>${formatNumber(r.n)}</b> ${escapeHtml(r.group)}: higher than <b>${r.pct}%</b> of them → <b>${escapeHtml(r.text)}</b>. The 10-minute walk below is shown for context and does not change the rank.</p></li>`,
   ];
   return `<div class="calc__head"><h4>How this score is calculated</h4><button type="button" class="calc__x" data-open-calc aria-label="Close">×</button></div><ol class="calc__steps">${steps.join("")}</ol>`;
 }
@@ -1750,10 +1750,9 @@ function listingFitHtml(areaProps, concept, props) {
   return `<section class="flat">
     <div class="lwhy__head">
       <button type="button" class="lfit__ring" data-open-calc aria-controls="score-calc" aria-expanded="false" title="How this score is calculated" data-area-score="${Number(areaProps.score) || 0}">${props ? listingRankRingHtml(props, concept) : fitRingHtml(areaProps.score, `for ${concept}`)}</button>
-      <div>
-        <h3 class="flat__h">Strengths &amp; watch-outs${infoTip(`The ring ranks this listing among comparable listings (same city, same sale/rent) on location only: its neighbourhood plus a 10-minute walk around the door. Price is not included — check the yield and price separately. Click the ring to see the calculation.${areaProps.lead ? ` What this business looks for: ${areaProps.lead}` : ""}`)}</h3>
-      </div>
+
     </div>
+    <p class="unit-note lwhy__note">Score = neighbourhood, the 300 m around the door, the unit (size, street level, frontage${state.query?.id && ["food","bakery","cafe"].includes(state.query.id) ? ", smoke outlet" : ""}) and price vs nearby. Tap the ring for the maths.</p>
     ${props ? `<div class="calc" id="score-calc" hidden>${scoreCalcHtml(props, areaProps)}</div>` : ""}
     ${whyScoreHtml(areaProps)}
   </section>
@@ -1798,9 +1797,6 @@ function listingModalContent(props) {
     ${dm ? kpi("Est. net yield", dealFmtPct(dm.netYield), `${yieldTipText(di.region)} Open the Calculator tab to change the assumptions.`, `data-hero-yield style="color:${yieldTone(dm.netYield, di.region)}"`).replace("</b></div>", `</b><small class="lkpi__sub" data-hero-payback>${dealFmtYears(dm.payback)} payback</small></div>`) : kpi("Size", props.sz ? `${formatNumber(props.sz)} m²` : "—")}
     ${rank ? kpi("Rank", rank.top <= 50 ? `Top ${rank.top}%` : `Bottom ${Math.max(1, 100 - rank.top + 1)}%`, `Among ${formatNumber(rank.n)} ${rank.group} for ${concept}.`) : ""}
   </div>`;
-  const verdict = areaProps
-    ? `<p class="verdict"><button type="button" class="verdict__btn" data-open-calc aria-controls="score-calc"><b>${escapeHtml(rank.text)} for ${escapeHtml(concept)}.</b></button></p>`
-    : "";
   const outlier = listingOutlier(props);
   const tenantEv = state.tenant ? state.tenantEval?.get(props.id) : null;
   const pills = [
@@ -1822,7 +1818,6 @@ function listingModalContent(props) {
     <div class="ltop">
       ${listingHeroHtml(images, props.u)}
       ${kpis}
-      ${verdict}
     </div>
     <nav class="lnav" role="tablist" aria-label="Card sections">
       ${tab("sec-why", "Why", true)}
@@ -1874,11 +1869,29 @@ function openListingDetail(props, coordinates) {
     renderAreaRanking();
   }
   openDetailModal(listingModalContent(props));
+  if (!props._full) {
+    ensureListingDetail(props).then(() => {
+      if (state.activeListingId !== props.id || !props._full) return;
+      const fresh = document.createElement("div");
+      fresh.innerHTML = listingModalContent(props);
+      for (const sel of [".ltop", "#sec-details"]) {
+        const now = detailModalBody.querySelector(sel);
+        const next = fresh.querySelector(sel);
+        if (now && next) now.replaceWith(next);
+      }
+    });
+  }
   if (coordinates) {
     map.flyTo({ center: coordinates, zoom: Math.max(map.getZoom(), 15), duration: 650 });
     showCatchment(coordinates[0], coordinates[1]);
   }
 }
+
+// Prefetch a listing's detail when the pointer or focus lands on its row, so the card opens complete.
+["pointerover", "focusin"].forEach((type) => document.addEventListener(type, (event) => {
+  const row = event.target.closest?.('[data-kind="listing"][data-id]');
+  if (row) ensureListingDetail(state.listingById.get(row.dataset.id)?.properties);
+}, { passive: true }));
 
 function openListingById(id) {
   const feature = state.listingById.get(id);
@@ -2248,18 +2261,22 @@ function showCatchment(lon, lat) {
         slot.innerHTML = `<p class="live-note">The 10-minute walk is unavailable right now.</p>${nearbyPlacesBlock(nearby)}`;
         return;
       }
+      const finish = () => {
+        if (token !== catchmentToken) return;
+        const scored = scoreWalk(lon, lat, feature);
+        if (state.activeListingId) {
+          state.listingWalkScores.set(state.activeListingId, scored.score);
+          state.listingWalkParts.set(state.activeListingId, scored);
+        }
+        refreshFitScoresUi(areaScore, scored.score);
+        slot.innerHTML = `${walkBreakdownHtml(scored, nearby)}`;
+      };
       if (!state.places?.length) {
-        slot.innerHTML = `<p class="live-note">The blue shape is a 10-minute walk. Premises are still loading, so the proximity score is not ready.</p>${nearbyPlacesBlock(nearby)}`;
+        slot.innerHTML = `<p class="live-note">The blue shape is a 10-minute walk. Loading the shops around it…</p>${nearbyPlacesBlock(nearby)}`;
+        ensurePlaces().then(finish, () => {});
         return;
       }
-      const scored = scoreWalk(lon, lat, feature);
-      if (state.activeListingId) {
-        state.listingWalkScores.set(state.activeListingId, scored.score);
-        state.listingWalkParts.set(state.activeListingId, scored);
-        renderListingRanking();
-      }
-      refreshFitScoresUi(areaScore, scored.score);
-      slot.innerHTML = `${walkBreakdownHtml(scored, nearby)}`;
+      finish();
     })
     .catch(() => {
       if (token === catchmentToken) {
@@ -2701,20 +2718,61 @@ function ensureMapLayers() {
   mapOverlayReady = scannerOverlayComplete();
 }
 
+/** Content-hashed data URL (index.html carries the hashes) so the browser can cache it forever. */
+function dataUrl(name, ext = "json") {
+  const v = window.PS_DATA?.[name];
+  return `data/${name}.${ext}${v ? `?v=${v}` : ""}`;
+}
+
+const fetchJson = (url) => fetch(url).then((response) => {
+  if (!response.ok) throw new Error(`${url}: ${response.status}`);
+  return response.json();
+});
+
+const LIST_FILES = ["l-mad-sale", "l-mad-rent", "l-bcn-sale", "l-bcn-rent"];
+const PLACE_FILES = ["p-mad", "p-bcn"];
+let placesPromise = null;
+
+/** Shop rows (186k) are only needed for walk scoring, pins and tallies — fetched after the leads are on screen. */
+function ensurePlaces() {
+  placesPromise ??= Promise.all(PLACE_FILES.map((name) => fetchJson(dataUrl(name)).catch(() => []))).then((parts) => {
+    state.places = parts.flat();
+    tallyListings();
+    syncPins();
+    return state.places;
+  });
+  return placesPromise;
+}
+
+const detailCache = new Map();
+/** Full Idealista payload (photos, descriptions, raw fields) for one listing, merged into its props on first open. */
+function ensureListingDetail(props) {
+  if (!props?.id || props._full) return Promise.resolve(props);
+  if (!detailCache.has(props.id)) {
+    detailCache.set(props.id, fetchJson(`data/d/${encodeURIComponent(props.id)}.json${window.PS_DATA?.d ? `?v=${window.PS_DATA.d}` : ""}`)
+      .then((full) => {
+        if (full?.inv) props.inv = { ...props.inv, ...full.inv };
+        if (full?.x) props.x = { ...props.x, ...full.x };
+        props._full = true;
+        return props;
+      })
+      .catch(() => { detailCache.delete(props.id); return props; }));
+  }
+  return detailCache.get(props.id);
+}
+
 async function bootstrapAppData() {
   setRankingsLoading(true);
   try {
-    const areas = await fetch("data/areas.geojson").then((response) => response.json());
+    const [areas, ...lists] = await Promise.all([
+      fetchJson(dataUrl("areas", "geojson")),
+      ...LIST_FILES.map((name) => fetchJson(dataUrl(name)).catch(() => ({ features: [] }))),
+    ]);
     state.areas = areas;
     state.areaById = new Map(areas.features.map((feature) => [feature.properties.id, feature]));
     if (map.getSource(MAP_SOURCES.areas)) map.getSource(MAP_SOURCES.areas).setData(areas);
 
-    const [places, listingsDoc] = await Promise.all([
-      fetch("data/places.json").then((response) => response.json()),
-      fetch("data/listings.geojson").then((response) => (response.ok ? response.json() : { features: [] })),
-    ]);
-    state.places = places;
-    const allListings = listingsDoc.features || [];
+    const allListings = lists.flatMap((doc) => doc.features || []);
     const fullListings = allListings.filter((feature) => feature.properties?.full);
     const pool = FULL_DETAIL_LEADS_ONLY && fullListings.length ? fullListings : allListings;
     state.listings = dedupeListingFeatures(pool);
@@ -2733,6 +2791,7 @@ async function bootstrapAppData() {
     renderListingRanking();
     document.body.classList.remove("is-loading");
     state.ready = true;
+    (window.requestIdleCallback || ((fn) => setTimeout(fn, 400)))(() => ensurePlaces());
   }
 }
 
@@ -2768,7 +2827,7 @@ function applyView(fly) {
 
 function tallyListings() {
   const counts = new Map();
-  for (const row of state.places) {
+  for (const row of state.places || []) {
     if (row[3] !== "V") continue;
     const activity = norm(row[7]);
     const bucket = counts.get(row[4]) || { listed: 0, forRent: 0, forSale: 0 };

@@ -402,13 +402,17 @@ function listingFeaturesHtml(inv) {
   const groups = EQUIP_GROUPS.map(([title, items]) => `<div class="feq-group"><h4>${title}</h4><ul>${items
     .map(([k, ico, label]) => { const s2 = st(e[k]); return `<li class="feq feq--${s2}" title="${escapeHtml(label)}: ${word[s2]}"><span class="feq__ico" aria-hidden="true">${ico}</span><span class="feq__lbl">${escapeHtml(label)}</span><span class="feq__st">${s2 === "yes" ? "✓" : s2 === "no" ? "✗" : "?"}</span></li>`; })
     .join("")}</ul></div>`).join("");
-  const other = [...(inv.features || []).filter((c) => !EQUIP_COVERED.test(c)), ...(inv.media || [])];
+  // Only the facts not shown elsewhere on the card (condition, activity and floor already have their own rows).
+  const extra = [];
+  const yieldHit = (inv.features || []).map((c) => /Gross annual profitability\s*([\d.,]+)\s*%/i.exec(c)).find(Boolean);
+  if (yieldHit) extra.push(`advertiser states a gross yield of ${yieldHit[1]}%`);
+  if ((inv.features || []).some((c) => /^Income producing$/i.test(c))) extra.push("sold with a paying tenant (income producing)");
   return `<section class="card-section lfeat">
     <h3 class="card-section__title">Equipment &amp; features</h3>
     <div class="feq-keys">${keyHtml}</div>
     <div class="feq-groups">${groups}</div>
     <p class="feq-legend"><span class="feq--yes">✓ listed</span><span class="feq--no">✗ listed as absent</span><span class="feq--unk">? not stated in the ad</span></p>
-    ${other.length ? `<div class="chips">${other.map((c) => `<span class="chip">${escapeHtml(c)}</span>`).join("")}</div>` : ""}
+    ${extra.length ? `<p class="feq-extra">Also in the ad: ${escapeHtml(extra.join(" · "))}</p>` : ""}
   </section>`;
 }
 

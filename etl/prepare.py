@@ -10,6 +10,7 @@ Writes web/data/areas.geojson, web/data/places.geojson, and web/data/meta.json.
 from __future__ import annotations
 
 import csv
+import gzip
 import json
 import unicodedata
 from collections import defaultdict
@@ -576,9 +577,8 @@ def main() -> None:
         json.dumps({"type": "FeatureCollection", "features": areas}, ensure_ascii=False, separators=(",", ":")),
         encoding="utf-8",
     )
-    (OUT / "places.json").write_text(
-        json.dumps(compact, ensure_ascii=False, separators=(",", ":")),
-        encoding="utf-8",
+    (ROOT / "data" / "build" / "places.json.gz").write_bytes(
+        gzip.compress(json.dumps(compact, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), mtime=0)
     )
     groups: dict[str, int] = defaultdict(int)
     by_city = defaultdict(int)
@@ -614,7 +614,7 @@ def main() -> None:
     (OUT / "meta.json").write_text(json.dumps(meta, ensure_ascii=False, indent=2), encoding="utf-8")
     print(json.dumps(meta, ensure_ascii=False, indent=2))
     print("areas", (OUT / "areas.geojson").stat().st_size)
-    print("places", (OUT / "places.json").stat().st_size)
+    print("places", (ROOT / "data" / "build" / "places.json.gz").stat().st_size)
 
 
 if __name__ == "__main__":

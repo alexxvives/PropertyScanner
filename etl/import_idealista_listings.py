@@ -17,6 +17,7 @@ from __future__ import annotations
 
 
 
+import gzip
 import json
 import os
 import re
@@ -37,7 +38,7 @@ RAW = ROOT / os.environ.get("IDEALISTA_RAW", "data/raw/mad_idealista_premises_sa
 
 AREAS = ROOT / "web/data/areas.geojson"
 
-OUT = ROOT / "web/data/listings.geojson"
+OUT = ROOT / "data/build/listings.geojson.gz"  # gzipped so the committed file stays far under 25 MiB
 
 META = ROOT / "web/data/meta.json"
 
@@ -892,7 +893,7 @@ def save_first_seen(first_seen: dict[str, str]) -> None:
 
 def recurate_existing() -> None:
     """Rebuild the curated block from the committed listings.geojson (no raw export needed)."""
-    collection = json.loads(OUT.read_text(encoding="utf-8"))
+    collection = json.loads(gzip.decompress(OUT.read_bytes()).decode("utf-8"))
     first_seen = load_first_seen()
     today = date.today().isoformat()
     before = len(collection["features"])
@@ -903,7 +904,7 @@ def recurate_existing() -> None:
         props["inv"] = curate_listing(props, props.get("x") or {}, first_seen, today)
         prune_raw_bag(props)
     collection["meta"]["investorFields"] = INVESTOR_FIELDS
-    OUT.write_text(json.dumps(collection, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    OUT.write_bytes(gzip.compress(json.dumps(collection, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), mtime=0))
     save_first_seen(first_seen)
     print(f"re-curated {len(collection['features'])} listings in {OUT}")
 
@@ -1056,7 +1057,7 @@ def main() -> None:
 
     OUT.parent.mkdir(parents=True, exist_ok=True)
 
-    OUT.write_text(json.dumps(collection, ensure_ascii=False, separators=(",", ":")), encoding="utf-8")
+    OUT.write_bytes(gzip.compress(json.dumps(collection, ensure_ascii=False, separators=(",", ":")).encode("utf-8"), mtime=0))
 
     if META.exists():
 

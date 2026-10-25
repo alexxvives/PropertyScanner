@@ -220,7 +220,7 @@ function saveCheck(listingId, checkId, v) {
 
 function listingAdText(p) {
   const inv = p.inv || {};
-  return [inv.desc_es, inv.desc_ca, inv.desc_en, p.x?.desc].filter(Boolean).join("\n");
+  return [inv.desc_es, inv.desc_ca, inv.desc_en, p.x?.desc, p.adx].filter(Boolean).join("\n");
 }
 
 const num = (s) => Number(String(s).replace(",", "."));

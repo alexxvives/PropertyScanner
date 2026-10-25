@@ -841,6 +841,7 @@ function setTenant(id) {
   renderTenantPicker();
   refreshTenantEval();
   renderListingRanking();
+  syncListings();
 }
 document.addEventListener("click", (event) => {
   const btn = document.getElementById("tenant-btn");
@@ -953,6 +954,7 @@ document.addEventListener("change", (event) => {
   if (event.target.id !== "show-excluded") return;
   state.showExcluded = event.target.checked;
   renderListingRanking();
+  syncListings();
 });
 
 document.addEventListener("click", (event) => {
@@ -1438,6 +1440,8 @@ function refreshFitScoresUi(areaScore, walkScore) {
     const sub = detailModalBody.querySelector('[data-sub="walk"]');
     if (sub) sub.textContent = Math.round(walkScore);
   }
+  const weq = detailModalBody.querySelector(".weq");
+  if (weq && Number.isFinite(walkScore)) weq.innerHTML = walkEquationHtml(areaScore, walkScore);
   const proxEl = detailModalBody.querySelector(".fit-score-proximity");
   const overallEl = detailModalBody.querySelector(".fit-score-overall");
   if (proxEl && Number.isFinite(walkScore)) {
@@ -1731,7 +1735,7 @@ function cnum(v, text) { return `<b class="tone tone--${toneOf(v)}">${text}</b>`
 function cxRowHtml(label, line, v, share, cls = "") {
   return `<li class="cx ${cls}"><span class="cx__name">${escapeHtml(label)}${line ? `<small>${escapeHtml(line)}</small>` : ""}</span>${cbarHtml(v)}<span class="cx__v">${cnum(v, Math.round(v * 100))}</span><span class="cx__w">× ${Math.round(share * 100)}%</span><span class="cx__p">${cnum(v, (v * share * 100).toFixed(1))}</span></li>`;
 }
-const CX_HEAD = `<li class="cx cx--head" aria-hidden="true"><span class="cx__name"></span><span></span><span class="cx__v">Value</span><span class="cx__w">Weight</span><span class="cx__p">Points</span></li>`;
+const CX_HEAD = `<li class="cx cx--head" aria-hidden="true"><span class="cx__name"></span><span></span><span class="cx__v"><span class="hl">Value</span><span class="hs">Val</span></span><span class="cx__w"><span class="hl">Weight</span><span class="hs">Wt</span></span><span class="cx__p"><span class="hl">Points</span><span class="hs">Pts</span></span></li>`;
 
 /** How a barrio's 0–100 score is built: weighted sub-factors → rival penalty → spread to 0–100. */
 function areaCalcHtml(a) {
@@ -1907,38 +1911,83 @@ function areaRadarHtml(parts) {
   return `<svg class="radar" viewBox="-34 0 328 224" role="img" aria-label="${escapeHtml(parts.map((p) => `${p.label} ${Math.round(p.value * 100)}`).join(", "))}">${grid}${axes}<polygon points="${poly((p) => Math.max(0.04, p.value))}" class="radar__shape"/>${dots}${labels}</svg>`;
 }
 
-/** Donut: same-type businesses, other open premises, closed premises. */
+/** Donut: other open shops, same-type rivals, closed premises. Hover a slice or legend row to highlight it. */
 function shopsDonutHtml(p, concept) {
   const same = Math.max(0, p.matches || 0), open = Math.max(0, (p.open || 0) - same), closed = Math.max(0, p.vacant || 0);
   const tot = same + open + closed;
   if (!tot) return "";
+  const Concept = concept[0].toUpperCase() + concept.slice(1);
+  const segs = [
+    { v: open, cls: "donut--open", name: "Other open shops" },
+    { v: same, cls: "donut--same", name: `${Concept} (rivals)` },
+    { v: closed, cls: "donut--closed", name: "Closed or empty" },
+  ];
   const C = 2 * Math.PI * 40;
+  const gap = 1.2;
   let off = 0;
-  const seg = (v, cls) => { const len = (C * v) / tot; const s = `<circle r="40" cx="56" cy="56" class="donut__seg ${cls}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"/>`; off += len; return s; };
-  const pct = (v) => `${Math.round((100 * v) / tot)}%`;
-  return `<div class="donut"><svg viewBox="0 0 112 112" role="img" aria-label="Premises: ${same} ${escapeHtml(concept)}, ${open} other open, ${closed} closed"><g transform="rotate(-90 56 56)">${seg(open, "donut--open")}${seg(same, "donut--same")}${seg(closed, "donut--closed")}</g><text x="56" y="54" text-anchor="middle" class="donut__n">${formatNumber(tot)}</text><text x="56" y="68" text-anchor="middle" class="donut__s">premises</text></svg>
-    <ul class="donut__legend"><li><i class="donut--open"></i>Other open shops<b>${formatNumber(open)}</b><small>${pct(open)}</small></li><li><i class="donut--same"></i>${escapeHtml(concept[0].toUpperCase() + concept.slice(1))} (rivals)<b>${formatNumber(same)}</b><small>${pct(same)}</small></li><li><i class="donut--closed"></i>Closed or empty<b>${formatNumber(closed)}</b><small>${pct(closed)}</small></li></ul></div>`;
+  const pct = (v) => `${((100 * v) / tot).toFixed(v / tot < 0.1 ? 1 : 0)}%`;
+  const arcs = segs.map((s, i) => {
+    const len = Math.max(0.6, (C * s.v) / tot - gap);
+    const out = `<circle r="40" cx="56" cy="56" data-i="${i}" data-n="${formatNumber(s.v)}" data-l="${escapeHtml(s.name)} · ${pct(s.v)}" class="donut__seg ${s.cls}" stroke-dasharray="${len.toFixed(2)} ${(C - len).toFixed(2)}" stroke-dashoffset="${(-off).toFixed(2)}"><title>${escapeHtml(s.name)}: ${formatNumber(s.v)} (${pct(s.v)})</title></circle>`;
+    off += (C * s.v) / tot;
+    return out;
+  }).join("");
+  return `<div class="donut" data-total="${formatNumber(tot)}">
+    <div class="donut__fig"><svg viewBox="0 0 112 112" role="img" aria-label="Premises: ${segs.map((s) => `${s.name} ${s.v}`).join(", ")}"><g transform="rotate(-90 56 56)">${arcs}</g><text x="56" y="55" text-anchor="middle" class="donut__n">${formatNumber(tot)}</text><text x="56" y="69" text-anchor="middle" class="donut__s">premises</text></svg></div>
+    <ul class="donut__legend">${segs.map((s, i) => `<li data-i="${i}" tabindex="0"><i class="${s.cls}"></i><span>${escapeHtml(s.name)}</span><b>${formatNumber(s.v)}</b><small>${pct(s.v)}</small></li>`).join("")}</ul></div>`;
 }
 
-/** This barrio vs the city median, one bar per measure; the tick marks the median. */
+function donutFocus(donut, i) {
+  if (!donut) return;
+  const n = donut.querySelector(".donut__n"), s = donut.querySelector(".donut__s");
+  donut.querySelectorAll("[data-i]").forEach((el) => el.classList.toggle("is-on", i != null && el.dataset.i === String(i)));
+  donut.classList.toggle("is-hover", i != null);
+  const seg = i != null ? donut.querySelector(`.donut__seg[data-i="${i}"]`) : null;
+  n.textContent = seg ? seg.dataset.n : donut.dataset.total;
+  s.textContent = seg ? seg.dataset.l.split(" · ")[1] : "premises";
+}
+["pointerover", "focusin"].forEach((type) => document.addEventListener(type, (event) => {
+  const el = event.target.closest?.(".donut [data-i]");
+  const d = event.target.closest?.(".donut");
+  if (d) donutFocus(d, el ? el.dataset.i : null);
+}));
+document.addEventListener("pointerout", (event) => {
+  const d = event.target.closest?.(".donut");
+  if (d && !d.contains(event.relatedTarget)) donutFocus(d, null);
+});
+
+/** This barrio vs the city: same dot-on-gradient rows as the walk factors, plus the raw value and × the median. */
 function areaVsCityHtml(p) {
   const pool = cityAreaPool(p);
   const med = (get) => { const v = pool.map(get).filter(Number.isFinite).sort((a, b) => a - b); return v.length ? v[Math.floor(v.length / 2)] : null; };
   const groups = WHY_GROUPS.map((g) => {
     const rows = g.rows.map((row) => {
       const v = row.get(p), m = med(row.get);
-      if (!Number.isFinite(v) || !m) return "";
-      const pct = cityPercentile(p, row.get);
-      const dir = row.dir ? row.dir() : row.invert ? "down" : "up";
-      const good = dir === "down" ? 1 - pct / 100 : dir === "mid" ? 1 - Math.abs(pct - 50) / 50 : pct / 100;
-      const w = Math.max(2, Math.min(100, (v / (2 * m)) * 100));
-      const ratio = v / m;
-      const rel = ratio >= 1.1 ? `${ratio.toFixed(1)}× avg` : ratio <= 0.9 ? `${Math.round((1 - ratio) * 100)}% below avg` : "≈ avg";
-      return `<li class="vs"><span class="vs__name">${escapeHtml(row.name)}${infoTip(typeof row.tip === "function" ? row.tip() : row.tip)}</span><span class="vs__track"><i class="cbar--${toneOf(good)}" style="width:${w.toFixed(1)}%"></i><em title="${escapeHtml(p.city)} median"></em></span><span class="vs__val">${cnum(good, escapeHtml(row.fmt(v, p)))}<small>${rel}</small></span></li>`;
+      if (!Number.isFinite(v)) return "";
+      const ratio = m ? v / m : null;
+      const rel = !ratio ? "" : ratio >= 1.1 ? ` · ${ratio.toFixed(1)}× avg` : ratio <= 0.9 ? ` · ${Math.round((1 - ratio) * 100)}% below avg` : " · ≈ avg";
+      const dir = row.dir ? row.dir() : row.neutral ? "neutral" : row.invert ? "down" : "up";
+      const tip = typeof row.tip === "function" ? row.tip() : row.tip;
+      return wvRowHtml({ name: row.name, tip, dir, pct: cityPercentile(p, row.get), city: p.city, small: `${row.fmt(v, p)}${rel}` });
     }).join("");
-    return rows ? `<div class="wv-group"><h4 class="wv-group__h">${iconSvg(g.icon, "ui-icon")}${g.title}</h4><ul class="vs-list">${rows}</ul></div>` : "";
+    return rows ? `<div class="wv-group"><h4 class="wv-group__h">${iconSvg(g.icon, "ui-icon")}${g.title}</h4><ul class="wv-list">${rows}</ul></div>` : "";
   }).join("");
-  return groups ? `<section class="flat"><h3 class="flat__h">Compared with ${escapeHtml(p.city)}${infoTip(`Bar = this neighbourhood; the tick in the middle = the ${p.city} median neighbourhood. Green = good for this business, red = bad.`)}</h3><div class="wv-groups">${groups}</div></section>` : "";
+  return groups ? `<section class="flat"><h3 class="flat__h">Compared with ${escapeHtml(p.city)}${infoTip(`Each dot places ${p.name} among all ${p.city} neighbourhoods. Green = better for this business, red = worse; two-sided bars mean a moderate amount is best.`)}</h3>
+    <div class="wv-scale"><span>Lowest in ${escapeHtml(p.city)}</span><span>Highest</span></div><div class="wv-groups">${groups}</div></section>` : "";
+}
+
+/** Small score ring for the walk equation. */
+function miniRingHtml(v, label, cls = "") {
+  const ok = Number.isFinite(v);
+  const n = ok ? Math.round(v) : null;
+  const c = 2 * Math.PI * 24;
+  const col = ok ? `hsl(${Math.round(Math.max(0, Math.min(1, (n - 25) / 55)) * 125)} 58% 42%)` : "var(--track)";
+  return `<div class="mring ${cls}"><svg viewBox="0 0 60 60" aria-hidden="true"><circle cx="30" cy="30" r="24" class="fit-ring__track"/>${ok ? `<circle cx="30" cy="30" r="24" class="fit-ring__fill" style="stroke:${col}" stroke-dasharray="${((n / 100) * c).toFixed(1)} ${c.toFixed(1)}" transform="rotate(-90 30 30)"/>` : ""}<text x="30" y="35" text-anchor="middle" class="mring__n">${ok ? n : "…"}</text></svg><span>${escapeHtml(label)}</span></div>`;
+}
+
+function walkEquationHtml(areaScore, walkScore) {
+  const both = Number.isFinite(walkScore);
+  return `${miniRingHtml(areaScore, "Neighbourhood")}<b class="weq__op">+</b>${miniRingHtml(walkScore, "10-min walk")}<b class="weq__op">=</b>${miniRingHtml(both ? combinedFitScore(areaScore, walkScore) : null, "Overall", "mring--big")}`;
 }
 
 function areaModalContent(props) {
@@ -1967,8 +2016,8 @@ function areaModalContent(props) {
     ${areaVsCityHtml(props)}
     ${ageChartHtml(props)}
     <section class="flat">
-      <h3 class="flat__h">10-minute walk from the centre</h3>
-      <div class="fit-score-stack"><div class="fit-score-proximity"><p class="live-note">Loads with the walk…</p></div><div class="fit-score-overall"></div></div>
+      <h3 class="flat__h">10-minute walk from the centre${infoTip("The blue shape on the map is everywhere you can walk to in 10 minutes from the middle of this neighbourhood. Overall = the average of the neighbourhood score and the walk score.")}</h3>
+      <div class="weq">${walkEquationHtml(props.score, null)}</div>
       <div class="visit-live fit-subsection fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
     </section>
   </article>`;
@@ -2484,6 +2533,7 @@ function syncListings() {
     const city = cityOfId(feature.properties.i) || "Madrid";
     if (state.city !== "all" && city !== state.city) continue;
     if (!bounds.contains([lon, lat])) continue;
+    if (state.tenant?.retail && !state.showExcluded && state.tenantEval?.get(feature.properties.id)?.excluded) continue;
     if (zoom >= 11) features.push(feature);
   }
   map.getSource(MAP_SOURCES.listings).setData({ type: "FeatureCollection", features });

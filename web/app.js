@@ -46,7 +46,7 @@ const HEATMAPS = {
     ramp: ["#f7f1e8", "#f6e0c8", "#efb27a", "#d46a32", "#8a3014"],
   },
   foot: {
-    label: "Open premises per km²",
+    label: "Foot traffic",
     field: "open_per_km2",
     ramp: ["#e8f1f8", "#c5d9ea", "#8eb5d4", "#4a7fa3", "#0e3d5c"],
   },
@@ -56,7 +56,7 @@ const HEATMAPS = {
     ramp: ["#eef0f8", "#c9cfea", "#8ea0d4", "#4d62a8", "#1e2a6b"],
   },
   competitors: {
-    label: "This business per km²",
+    label: "Rivals nearby",
     field: "matches_per_km2",
     ramp: ["#f3e8f5", "#dbc8e0", "#b894c4", "#7a4f7a", "#4a1942"],
   },
@@ -71,12 +71,12 @@ const HEATMAPS = {
     ramp: ["#f8efe8", "#efd0bc", "#d99a78", "#b85a32", "#7a2e12"],
   },
   pals: {
-    label: "Complementary shops per km²",
+    label: "Helpful neighbours",
     field: "complements_per_km2",
     ramp: ["#e7f4ea", "#c3e4cb", "#86c498", "#3d8f55", "#14532d"],
   },
   room: {
-    label: "Closed or empty doors per km²",
+    label: "Empty shopfronts",
     field: "vacant_per_km2",
     ramp: ["#e5f4f1", "#b9ddd6", "#7fb8ad", "#3d8a7f", "#0d4f48"],
   },
@@ -106,12 +106,12 @@ const HEATMAPS = {
     ramp: ["#f4f1ea", "#ddd4c6", "#b5a48e", "#7c6854", "#3d3428"],
   },
   popDensity: {
-    label: "Residents per km²",
+    label: "Residents nearby",
     field: "pop_per_km2",
     ramp: ["#e7f2f4", "#bddde3", "#7eb8c4", "#3a8494", "#0f3d48"],
   },
   income: {
-    label: "Disposable income per person",
+    label: "Spending power",
     field: "income_eur",
     ramp: ["#f3f6e8", "#d5e2b4", "#a8c56e", "#6a9336", "#2f5414"],
   },
@@ -136,7 +136,7 @@ const HEATMAPS = {
     ramp: ["#eef3f8", "#c9d7e8", "#8eafd0", "#4d7eaa", "#1c3d5c"],
   },
   metro: {
-    label: "Metro stations",
+    label: "Metro nearby",
     field: "metro_stops",
     ramp: ["#f3f0fa", "#d4c8ea", "#a892d0", "#6d52a8", "#321e6e"],
   },
@@ -151,7 +151,7 @@ const HEATMAPS = {
     ramp: ["#f6f1ea", "#e2d0b8", "#c4a078", "#8d6238", "#4a3014"],
   },
   retailFloor: {
-    label: "Retail floor area",
+    label: "Shop space nearby",
     field: "retail_m2",
     ramp: ["#f8efe8", "#efd0bc", "#d99a78", "#b85a32", "#7a2e12"],
   },
@@ -252,6 +252,7 @@ const state = {
   listingCounts: new Map(),
   query: null,
   heatmap: "fit",
+  metricFilter: {},
   mapStyle: "light",
   filters: { competition: true, complements: true, daytime: true, vacancies: true },
   selectedId: null,
@@ -414,7 +415,7 @@ const SCORE_TIPS = {
   [scorePartLabel("room")]: "Empty or closed street doors on this map. In Madrid that means census-closed; in Barcelona it can mean listed empty premises.",
   "Shops in the walk": "Open premises inside a 10-minute walk from this door. Higher is usually better for footfall-driven concepts.",
   "Competitors in the walk": "Similar businesses inside the walk. Closer competitors count more than distant ones.",
-  "Complements in the walk": "Complementary shops inside the walk that bring passing trade without direct competition.",
+  "Helpful neighbours in the walk": "Complementary shops inside the walk that bring passing trade without direct competition.",
   "Empty doors in the walk": "Vacant or closed doors inside the walk. Good on a busy street; often a warning on a quiet one.",
   "Area fit": "Overall neighborhood score for your selected business type, from census and context data.",
   "Walk fit": "Score for the 10-minute walk around this exact address, using live shop locations on the map.",
@@ -743,8 +744,10 @@ function paintScores() {
   stops.forEach((stop, index) => {
     interpolate.push(stop, ramp[index]);
   });
+  const failIds = Object.keys(state.metricFilter).length ? (state.areas?.features || []).filter((f) => !passesMetricFilter(f.properties)).map((f) => f.properties.id) : [];
   const expression = ["case",
     ["<", ["get", "score"], 0], "#ebe4da",
+    ["in", ["get", "id"], ["literal", failIds]], "#e9e5df",
     ["!", ["has", mode.field]], "#ebe4da",
     interpolate,
   ];
@@ -756,8 +759,41 @@ function paintScores() {
 }
 
 /** Areas whose bounding box overlaps the current map view (ranking only; scores are city-wide). */
+const FILTER_GROUPS = [
+  ["Demand", "👥", ["foot", "popDensity", "income"]],
+  ["Competition", "🏪", ["competitors", "pals"]],
+  ["Access & supply", "🚇", ["metro", "retailFloor", "room"]],
+];
+let metricCuts = null;
+/** Per city, the 33rd / 67th percentile of each filter metric. */
+function metricCutoffs() {
+  if (metricCuts || !state.areas?.features?.length) return metricCuts || {};
+  metricCuts = {};
+  const by = {};
+  for (const f of state.areas?.features || []) (by[f.properties.city] ||= []).push(f.properties);
+  for (const [city, ps] of Object.entries(by)) {
+    metricCuts[city] = {};
+    for (const id of FILTER_GROUPS.flatMap((g) => g[2])) {
+      const fld = HEATMAPS[id].field;
+      const v = ps.map((p) => Number(p[fld])).filter(Number.isFinite).sort((a, b) => a - b);
+      metricCuts[city][id] = v.length ? [v[Math.floor(v.length / 3)], v[Math.floor((2 * v.length) / 3)]] : null;
+    }
+  }
+  return metricCuts;
+}
+function passesMetricFilter(p) {
+  const cuts = metricCutoffs()[p.city] || {};
+  for (const [id, want] of Object.entries(state.metricFilter)) {
+    const c = cuts[id], v = Number(p[HEATMAPS[id].field]);
+    if (!c || !Number.isFinite(v)) return false;
+    if (want === "low" && v > c[0]) return false;
+    if (want === "high" && v < c[1]) return false;
+  }
+  return true;
+}
+
 function areasInView() {
-  const all = visibleAreas();
+  const all = visibleAreas().filter((f) => passesMetricFilter(f.properties));
   if (!map?.getBounds) return all;
   const b = map.getBounds();
   return all.filter((feature) => {
@@ -784,7 +820,7 @@ function renderAreaRanking() {
     .sort((a, b) => b.properties.score - a.properties.score);
   areaRankingTitle.textContent = rankingConceptTitle("neighborhood");
   if (!rows.length) {
-    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? "No neighbourhoods in view — zoom out or jump to Madrid / Barcelona." : "Loading neighborhoods…"}</p></li>`;
+    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? (Object.keys(state.metricFilter).length ? "No neighbourhoods match these filters — set one back to Any." : "No neighbourhoods in view — zoom out or jump to Madrid / Barcelona.") : "Loading neighborhoods…"}</p></li>`;
     return;
   }
   areaRanking.innerHTML = rows
@@ -1635,30 +1671,30 @@ const WHY_GROUPS = [
   {
     title: "Demand", icon: "users",
     rows: [
-      { part: () => scorePartLabel("foot"), name: "Footfall", tip: "Open shops and businesses per km² — a proxy for how many people walk past.", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
-      { part: () => scorePartLabel("popDensity"), name: "Residents", tip: "People living per km² in this neighbourhood (municipal census).", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
-      { part: () => scorePartLabel("income"), name: "Disposable income", tip: "Average disposable income per person in this neighbourhood.", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
+      { part: () => scorePartLabel("foot"), name: "Foot traffic", tip: "Open shops and businesses per km² — a proxy for how many people walk past.", get: (p) => p.open_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("popDensity"), name: "Residents nearby", tip: "People living per km² in this neighbourhood (municipal census).", get: (p) => p.pop_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("income"), name: "Spending power", tip: "Average disposable income per person in this neighbourhood.", get: (p) => p.income_eur, fmt: (v) => `€${formatNumber(Math.round(v))} /person` },
     ],
   },
   {
     title: "Competition", icon: "store",
     rows: [
-      { part: () => scorePartLabel("competitors"), name: "Same-type businesses", tip: "Open businesses of the same type in this neighbourhood. Fewer usually means less competition.", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
-      { part: () => scorePartLabel("pals"), name: "Complementary shops", tip: "Shops that bring the same customers (e.g. a café near a bakery).", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
+      { part: () => scorePartLabel("competitors"), name: "Rivals nearby", tip: "Open businesses of the same type in this neighbourhood. Fewer usually means less competition.", get: (p) => p.matches_per_km2, fmt: (v, p) => `${formatNumber(p.matches)} open · ${v.toFixed(1)} /km²`, invert: true },
+      { part: () => scorePartLabel("pals"), name: "Helpful neighbours", tip: "Shops that bring the same customers (e.g. a café near a bakery).", get: (p) => p.complements_per_km2, fmt: (v, p) => `${formatNumber(p.complements)} · ${v.toFixed(1)} /km²` },
     ],
   },
   {
     title: "Access", icon: "train",
     rows: [
-      { part: () => scorePartLabel("metro"), name: "Public transit", tip: "Metro and bus stops in this neighbourhood.", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
+      { part: () => scorePartLabel("metro"), name: "Metro nearby", tip: "Metro and bus stops in this neighbourhood.", get: (p) => transitValue(p), fmt: (v, p) => `${formatNumber(p.metro_stops || 0)} metro · ${formatNumber(p.bus_stops || 0)} bus stops` },
       { part: () => null, name: "Road traffic", tip: () => trafficTip(), dir: () => trafficDir(), get: (p) => p.traffic_veh_h, fmt: (v) => `${formatNumber(Math.round(v))} veh/h measured`, line: (pct) => (pct >= 60 ? "Busier roads than most of the city" : "Quieter roads than most of the city") },
     ],
   },
   {
     title: "Supply", icon: "building",
     rows: [
-      { part: () => scorePartLabel("retailFloor"), name: "Retail floor area", tip: "Square metres of retail space per km² — how commercial the area is.", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
-      { part: () => scorePartLabel("room"), name: "Empty premises", tip: "Vacant or closed premises per km². A moderate amount is good — there is room to open and rents stay negotiable. Very high vacancy (the red end) usually means a street that is losing trade.", dir: () => "mid", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
+      { part: () => scorePartLabel("retailFloor"), name: "Shop space nearby", tip: "Square metres of retail space per km² — how commercial the area is.", get: (p) => p.retail_per_km2, fmt: (v) => `${formatNumber(Math.round(v))} m²/km²` },
+      { part: () => scorePartLabel("room"), name: "Empty shopfronts", tip: "Vacant or closed premises per km². A moderate amount is good — there is room to open and rents stay negotiable. Very high vacancy (the red end) usually means a street that is losing trade.", dir: () => "mid", get: (p) => p.vacant_per_km2, fmt: (v, p) => `${formatNumber(p.vacant)} · ${formatNumber(Math.round(v))} /km²` },
     ],
   },
 ];
@@ -1751,7 +1787,7 @@ function areaCalcHtml(a) {
   return `<ul class="cx-list cx-list--sub">${CX_HEAD}${rows}${steps.join("")}</ul>`;
 }
 
-const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Complementary shops", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"] };
+const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Helpful neighbours", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"] };
 
 /** Exact, step-by-step calculation of this listing's score and rank — the same numbers score.js ranked with. */
 function scoreCalcHtml(props, areaProps) {
@@ -1904,7 +1940,7 @@ function areaRadarHtml(parts) {
   const labels = parts.map((p, i) => {
     const [x, y] = pt(i, 1.2);
     const anchor = x < cx - 8 ? "end" : x > cx + 8 ? "start" : "middle";
-    const name = p.label.replace(/ per km²$/, "").replace(/^Complementary shops$/, "Complementary").replace(/^Disposable income.*/, "Income").replace(/^Closed or empty doors$/, "Empty doors").replace(/^Open premises$/, "Footfall").replace(/^This business$/, "Rivals");
+    const name = p.label.replace(/ nearby$/, "").replace(/^Helpful neighbours$/, "Helpful shops");
     return `<text x="${x.toFixed(1)}" y="${(y + 3).toFixed(1)}" text-anchor="${anchor}" class="radar__lbl radar__lbl--${toneOf(p.value)}">${escapeHtml(name)}</text>`;
   }).join("");
   const dots = parts.map((p, i) => { const [x, y] = pt(i, Math.max(0.04, p.value)); return `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="3.2" class="radar__dot radar__dot--${toneOf(p.value)}"/>`; }).join("");
@@ -2390,7 +2426,7 @@ function scoreWalk(lon, lat, feature) {
   const parts = [
     { label: "Shops in the walk", pct: pOpen, dir: tradeDir, tip: crowdCap ? "Open premises inside the walk, per km². For this business a lively-but-not-packed street is best." : "Open premises inside the walk, per km² — more shops means more people walking past.", detail: `${formatNumber(open)} open premises`, score: Math.round(trade * 100), weight: profile.signals.street, value: trade, line: `${formatNumber(open)} open premises inside the walk` },
     { label: "Competitors in the walk", pct: pMatch, dir: "down", tip: "Same-type businesses inside the walk, per km². Closer ones count more. Fewer is better.", detail: `${formatNumber(matchN)} ${plural(query.label, matchN)}, closer ones count more`, score: Math.round(gap * 100), weight: profile.signals.gap, value: gap, line: `${formatNumber(matchN)} ${plural(query.label, matchN)} inside the walk. Closer ones count more.` },
-    { label: "Complements in the walk", pct: pPal, dir: "up", tip: "Shops that bring the same customers, inside the walk, per km². More is better.", detail: `${formatNumber(palN)} complementary shops`, score: Math.round(pals * 100), weight: profile.signals.pals, value: pals, line: `${formatNumber(palN)} complementary shops inside the walk` },
+    { label: "Helpful neighbours in the walk", pct: pPal, dir: "up", tip: "Shops that bring the same customers, inside the walk, per km². More is better.", detail: `${formatNumber(palN)} complementary shops`, score: Math.round(pals * 100), weight: profile.signals.pals, value: pals, line: `${formatNumber(palN)} complementary shops inside the walk` },
     { label: "Empty doors in the walk", pct: pVac, dir: doorsDir, tip: alive ? "Vacant premises inside the walk, per km². On a trading street a moderate number is good (room to open); very many is a warning." : "Empty or closed doors on a thin street — fewer is better.", detail: alive ? `${formatNumber(vacant)} empty doors on a trading street` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street`, score: Math.round(doors * 100), weight: 0.4, value: doors, line: alive ? `${formatNumber(vacant)} empty doors where the street is already trading` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street` },
   ];
   const weight = parts.reduce((sum, part) => sum + part.weight, 0);
@@ -2587,19 +2623,18 @@ function mountMapToolbar() {
         `<button type="button" class="map-style-btn${id === state.mapStyle ? " is-active" : ""}" data-style="${id}" title="${escapeHtml(style.label)}" style="--swatch:${style.swatch}"><span class="map-style-btn__dot" aria-hidden="true"></span><span class="map-style-btn__label">${escapeHtml(style.label)}</span></button>`,
     )
     .join("");
-  mapHeatmapToolbar.innerHTML = HEATMAP_TOOLBAR_KEYS
-    .map((id) => {
+  const seg = (id) => `<span class="mf__seg" role="group" aria-label="${escapeHtml(HEATMAPS[id].label)}">${["low", "any", "high"].map((v) => `<button type="button" data-mf="${id}" data-v="${v}" class="${(state.metricFilter[id] || "any") === v ? "is-on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</span>`;
+  const n = Object.keys(state.metricFilter).length;
+  const wasOpen = mapHeatmapToolbar.querySelector("details")?.open ?? window.innerWidth > 700;
+  mapHeatmapToolbar.innerHTML = `<details class="mfbox"${wasOpen ? " open" : ""}><summary><b>Filters${n ? ` · ${n} on` : ""}</b><span class="unit-note">Low = bottom third of the city · High = top third · tap a name to colour the map</span></summary>${n ? `<button type="button" class="mf__reset" data-mf-reset>Reset filters</button>` : ""}<div class="mf">${FILTER_GROUPS.map(([title, icon, keys]) => `<section class="mf__grp"><h4><span aria-hidden="true">${icon}</span>${title}</h4>${keys.map((id) => {
       const mode = HEATMAPS[id];
-      if (!mode) return "";
-      const chip = mode.ramp[Math.min(2, mode.ramp.length - 1)];
-      return `<button type="button" class="heatmap-chip${id === state.heatmap ? " is-active" : ""}" data-heatmap="${id}" title="${escapeHtml(mode.label)}" style="--chip:${chip}">${escapeHtml(mode.label)}</button>`;
-    })
-    .join("");
+      return `<div class="mf__row"><button type="button" class="mf__name${id === state.heatmap ? " is-active" : ""}" data-heatmap="${id}" title="Colour the map by ${escapeHtml(mode.label)}" style="--chip:${mode.ramp[2]}"><i></i>${escapeHtml(mode.label)}</button>${seg(id)}</div>`;
+    }).join("")}</section>`).join("")}</div></details>`;
 }
 
 function setHeatmapMode(id) {
   if (!HEATMAPS[id]) return;
-  state.heatmap = id;
+  state.heatmap = state.heatmap === id ? "fit" : id;
   mountMapToolbar();
   if (state.areas) paintScores();
 }
@@ -3086,6 +3121,16 @@ mapHeatmapToolbar?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-heatmap]");
   if (!button) return;
   setHeatmapMode(button.dataset.heatmap);
+});
+mapHeatmapToolbar?.addEventListener("click", (event) => {
+  const b = event.target.closest("[data-mf],[data-mf-reset]");
+  if (!b) return;
+  if (b.dataset.mfReset != null) state.metricFilter = {};
+  else if (b.dataset.v === "any") delete state.metricFilter[b.dataset.mf];
+  else state.metricFilter[b.dataset.mf] = b.dataset.v;
+  mountMapToolbar();
+  paintScores();
+  renderAreaRanking();
 });
 
 function closePickers(except) {

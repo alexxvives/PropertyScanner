@@ -2400,3 +2400,33 @@ img.is-broken { opacity: 0; }
   .weq { gap: 8px; }
   .mring svg { width: 54px; height: 54px; } .mring--big svg { width: 70px; height: 70px; }
 }
+
+/* ---- Round 17: grouped Low/Any/High filters ---- */
+.map-toolbar__group--heat { display: block; max-width: 760px; }
+.mfbox > summary { list-style: none; cursor: pointer; display: flex; gap: 10px; align-items: baseline; flex-wrap: wrap; font-size: 13px; }
+.mfbox > summary::-webkit-details-marker { display: none; }
+.mfbox > summary b::after { content: " ▾"; color: var(--muted); }
+.mfbox:not([open]) > summary b::after { content: " ▸"; }
+.mfbox > summary .unit-note { font-size: 11px; }
+.mf { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px 18px; margin-top: 8px; }
+.mf__grp h4 { margin: 0 0 4px; font-size: 11px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.mf__row { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 3px 0; }
+.mf__name { all: unset; cursor: pointer; font-size: 12.5px; display: flex; align-items: center; gap: 6px; white-space: nowrap; border-radius: 6px; padding: 2px 4px; }
+.mf__name i { width: 9px; height: 9px; border-radius: 50%; background: var(--chip); flex: none; }
+.mf__name.is-active { background: color-mix(in srgb, var(--chip) 30%, transparent); font-weight: 600; }
+.mf__seg { display: inline-flex; border: 1px solid rgba(0,0,0,.12); border-radius: 999px; overflow: hidden; flex: none; }
+.mf__seg button { all: unset; cursor: pointer; font-size: 11px; padding: 3px 8px; color: var(--muted); }
+.mf__seg button + button { border-left: 1px solid rgba(0,0,0,.08); }
+.mf__seg button.is-on { background: #2b2620; color: #fff; }
+.mf__seg button[data-v="any"].is-on { background: rgba(0,0,0,.08); color: var(--ink); }
+.mf__reset { all: unset; cursor: pointer; font-size: 12px; color: #c2561a; margin-top: 4px; }
+@media (max-width: 1100px) { .mf { grid-template-columns: 1fr 1fr; } }
+@media (max-width: 700px) {
+  .map-toolbar__group--heat { max-width: none; }
+  .mf { grid-template-columns: 1fr; max-height: 46vh; overflow: auto; }
+  .mfbox > summary .unit-note { display: none; }
+}
+.mf, .mf { grid-template-columns: 1fr !important; gap: 4px; }
+.map-toolbar__group--heat { min-width: 300px; }
+.mf__row { padding: 1px 0; }
+.mfbox > summary .unit-note { flex-basis: 100%; }

@@ -2005,7 +2005,6 @@ function areaModalContent(props) {
         <p class="ahero__rank"><b>#${rank}</b> of ${pool.length} ${escapeHtml(props.city)} neighbourhoods</p>
         <span class="cbar cbar--${toneOf(1 - (top || 50) / 100)} ahero__bar"><i style="width:${Math.max(3, 100 - (top || 50))}%"></i></span>
         <p class="ahero__top">${top ? `Top ${top}%` : ""}</p>
-        ${visitReasonHtml(props)}
       </div>
     </section>
     <section class="flat">

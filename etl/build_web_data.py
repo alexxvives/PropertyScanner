@@ -87,9 +87,85 @@ def micro_counts(lon: float, lat: float, grid: dict) -> list:
     return [o, v, c, {k: round(val, 1) for k, val in w.items()}]
 
 
+def _ascii(s: str) -> str:
+    import unicodedata
+    return unicodedata.normalize("NFKD", s or "").encode("ascii", "ignore").decode().lower()
+
+
+STREET_WORDS = re.compile(r"\b(calle|c|de|del|la|las|los|el|avenida|av|paseo|plaza|carrer|d|l|passeig|avinguda|placa|ronda|travesia|carretera)\b")
+
+
+def street_no(p: dict) -> tuple:
+    """(street, number) from 'Local en Calle de X, 12, Barrio, City'. Either can be None."""
+    m = re.match(r"^.*? en (?:rentabilidad en )?([^,]+),(?: (\d+)\b)?", _ascii(p.get("t")))
+    if not m:
+        return None, None
+    street = re.sub(r"\W+", " ", STREET_WORDS.sub(" ", m.group(1))).strip()
+    if street == _ascii(p.get("n")).strip() or street == _ascii(p.get("d")).strip():
+        street = None  # 'Local en Palacio, Madrid' names the barrio, not a street
+    return street or None, m.group(2)
+
+
+def dedupe(features: list) -> tuple[list, int]:
+    """Same premises posted by several agencies: same street/number or same spot, similar size and price.
+    Keep the richest ad (photos + text), link the others as `dups`."""
+    def km(a, b):
+        kx = 111320 * math.cos(math.radians(a[1]))
+        return math.hypot((a[0] - b[0]) * kx, (a[1] - b[1]) * 110540)
+
+    parent = list(range(len(features)))
+
+    def find(i):
+        while parent[i] != i:
+            parent[i] = parent[parent[i]]
+            i = parent[i]
+        return i
+
+    info = [(f["properties"], f["geometry"]["coordinates"], street_no(f["properties"])) for f in features]
+    for i in range(len(features)):
+        a, ca, (sa, na) = info[i]
+        for j in range(i + 1, len(features)):
+            b, cb, (sb, nb) = info[j]
+            if a.get("m") != b.get("m") or a.get("op") != b.get("op") or not (a.get("sz") and b.get("sz") and a.get("p") and b.get("p")):
+                continue
+            if abs(a["sz"] - b["sz"]) > max(10, 0.08 * max(a["sz"], b["sz"])) or abs(a["p"] - b["p"]) > 0.12 * max(a["p"], b["p"]):
+                continue
+            if (sa and sb and sa != sb) or (na and nb and na != nb):
+                continue
+            d = km(ca, cb)
+            exact = a["sz"] == b["sz"] and abs(a["p"] - b["p"]) <= 0.005 * a["p"]
+            if d <= 60 or (sa and sa == sb and d <= 250) or (exact and d <= 300):
+                parent[find(j)] = find(i)
+    groups = defaultdict(list)
+    for i in range(len(features)):
+        groups[find(i)].append(i)
+    keep, dropped = [], 0
+    for idx in groups.values():
+        def rich(i):
+            p = features[i]["properties"]
+            x = p.get("x") or {}
+            return (len(x.get("imgs") or []) + len(x.get("desc") or "") // 200, -(int(p["id"]) if str(p["id"]).isdigit() else 0))
+        idx.sort(key=rich, reverse=True)
+        f = features[idx[0]]
+        if len(idx) > 1:
+            f["properties"]["dups"] = [
+                {"id": features[i]["properties"]["id"], "u": features[i]["properties"].get("u"),
+                 "ag": (features[i]["properties"].get("inv") or {}).get("agency") or "private seller",
+                 "p": features[i]["properties"].get("p"), "sz": features[i]["properties"].get("sz")}
+                for i in idx[1:]
+            ]
+            dropped += len(idx) - 1
+        keep.append(f)
+    return keep, dropped
+
+
 def main() -> None:
     listings = json.loads(gzip.decompress((BUILD / "listings.geojson.gz").read_bytes()))
     places = json.loads(gzip.decompress((BUILD / "places.json.gz").read_bytes()))
+    listings["features"], dropped = dedupe(listings["features"])
+    print(f"duplicates merged: {dropped}")
+    od_path = BUILD / "opendata.json.gz"
+    opendata = json.loads(gzip.decompress(od_path.read_bytes()))["rows"] if od_path.exists() else {}
     rows = places if isinstance(places, list) else places.get("rows") or places.get("places")
     grid = defaultdict(list)
     for r in rows:
@@ -104,7 +180,11 @@ def main() -> None:
         p = f["properties"]
         lon, lat = f["geometry"]["coordinates"][:2]
         city = CITY.get(p.get("m")) or str(p.get("i", "x-"))[:3]
-        files[f"l-{city}-{p.get('op', 'sale')}"].append(slim(f, micro_counts(lon, lat, grid)))
+        slimmed = slim(f, micro_counts(lon, lat, grid))
+        od = opendata.get(str(p["id"]))
+        if od:
+            slimmed["properties"]["od"] = od
+        files[f"l-{city}-{p.get('op', 'sale')}"].append(slimmed)
         (detail_dir / f"{p['id']}.json").write_text(dumps({"inv": p.get("inv"), "x": p.get("x")}), encoding="utf-8")
 
     by_city = defaultdict(list)

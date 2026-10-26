@@ -147,6 +147,9 @@
         const w = nb[3] || {};
         return { open: nb[0], comp: w[code] || 0, pals: palCodes.reduce((s, k) => s + (w[k] || 0), 0), vac: (nb[1] + nb[2]) / Math.max(1, nb[0] + nb[1] + nb[2]), nb };
       });
+      const odv = group.map((f) => f.properties.od || null);
+      const pInc = pctFn(odv.map((o) => o?.sec?.hinc).filter(Number.isFinite));
+      const pDay = pctFn(odv.filter(Boolean).map((o) => (o.of || 0) + 3 * (o.sc || 0)));
       const pOpen = pctFn(raw.map((r) => r.open)), pComp = pctFn(raw.map((r) => r.comp)), pPals = pctFn(raw.map((r) => r.pals)), pVac = pctFn(raw.map((r) => r.vac));
       const prices = priceResiduals(group);
       const pPrice = pctFn([...prices.values()].map((v) => -v.diff));
@@ -157,10 +160,17 @@
         const areaV = a && a.score >= 0 ? a.score / 100 : 0.4;
         const crowd = profile.crowd ?? 0.5;
         const foot = pOpen(r.open);
-        const footV = crowd * foot + (1 - crowd) * Math.min(1, foot / 0.35);
+        let footV = crowd * foot + (1 - crowd) * Math.min(1, foot / 0.35);
+        const od = p.od || {};
+        // a real pedestrian counter close by outweighs the shop-count estimate: blend 50/50
+        const ped = od.ped && od.ped[1] <= 250 ? od.ped : null;
+        if (ped) footV = 0.5 * footV + 0.5 * Math.max(0, Math.min(1, Math.log(ped[0] / 1000) / Math.log(80)));
         const sig = profile.signals || {};
         const mw = { foot: sig.street ?? 0.6, pals: sig.pals ?? 0.4, gap: sig.gap ?? 0.6, health: 0.35 };
         const mv = { foot: footV, pals: pPals(r.pals), gap: 1 - pComp(r.comp), health: 1 - pVac(r.vac) };
+        if (Number.isFinite(od.sec?.hinc)) { mw.income = ["cafe", "bakery", "beauty", "fashion"].includes(c) ? 0.25 : 0.15; mv.income = pInc(od.sec.hinc); }
+        if (p.od && od.of != null) { mw.daytime = ["cafe", "bakery", "food"].includes(c) ? 0.3 : 0.12; mv.daytime = pDay((od.of || 0) + 3 * (od.sc || 0)); }
+        const extra = [ped ? `counter on ${ped[2]} (${ped[1]} m): ${Math.round(ped[0]).toLocaleString("es-ES")} people/day` : "", Number.isFinite(od.sec?.hinc) ? `household income ${Math.round(od.sec.hinc).toLocaleString("es-ES")} €/yr` : "", p.od && od.of != null ? `${od.of || 0} offices, ${od.sc || 0} schools within 400 m` : ""].filter(Boolean);
         const mSum = mw.foot + mw.pals + mw.gap + mw.health;
         const microV = Object.keys(mw).reduce((s, k) => s + mw[k] * mv[k], 0) / mSum;
         const unit = unitFit(p, c, band);
@@ -170,7 +180,7 @@
         const priceV = pr && !odd ? pPrice(-pr.diff) : 0.5;
         const parts = [
           { id: "area", label: `Neighbourhood${a ? ` (${a.name})` : ""}`, value: areaV, weight: WEIGHTS.area, line: a ? `${a.name} scores ${a.score}/100 for this business` : "no neighbourhood data" },
-          { id: "micro", label: "Block around the door (300 m)", value: microV, weight: WEIGHTS.micro, line: `${r.nb[0]} open shops, ${r.comp.toFixed(1)} same-type rivals, ${r.pals.toFixed(1)} complementary shops, ${Math.round(r.vac * 100)}% empty/closed` , sub: mv, subW: mw },
+          { id: "micro", label: "Block around the door (300 m)", value: microV, weight: WEIGHTS.micro, line: `${r.nb[0]} open shops, ${r.comp.toFixed(1)} same-type rivals, ${r.pals.toFixed(1)} complementary shops, ${Math.round(r.vac * 100)}% empty/closed${extra.length ? ` · ${extra.join(" · ")}` : ""}`, sub: mv, subW: mw },
           { id: "unit", label: "The unit", value: unit.v, weight: WEIGHTS.unit, line: unit.pieces.map((x) => x.text).join(" · "), pieces: unit.pieces },
           { id: "price", label: op === "rent" ? "Rent vs nearby" : "Price vs nearby", value: priceV, weight: WEIGHTS.price, line: odd ? `${Math.round(pr.pm2).toLocaleString("es-ES")} €/m² vs ~${Math.round(pr.localPm2).toLocaleString("es-ES")} €/m² nearby — too far off to trust (likely a typo), counted as neutral` : pr ? `${Math.round(pr.pm2).toLocaleString("es-ES")} €/m² vs ~${Math.round(pr.localPm2).toLocaleString("es-ES")} €/m² for the 12 nearest ${op === "rent" ? "rentals" : "sales"} (size-adjusted ${pr.diff > 0 ? "+" : ""}${Math.round((Math.exp(pr.diff) - 1) * 100)}%)` : "price or size missing — neutral" },
         ];

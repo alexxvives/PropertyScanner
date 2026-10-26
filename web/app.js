@@ -1794,7 +1794,7 @@ function areaCalcHtml(a) {
   return `<ul class="cx-list cx-list--sub">${CX_HEAD}${rows}${steps.join("")}</ul>`;
 }
 
-const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Helpful neighbours", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"] };
+const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Helpful neighbours", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"], income: ["Local spending power", "household income in this census section (INE)"], daytime: ["Daytime crowd", "offices and schools within 400 m (OpenStreetMap)"] };
 
 /** Exact, step-by-step calculation of this listing's score and rank — the same numbers score.js ranked with. */
 function scoreCalcHtml(props, areaProps) {
@@ -1915,9 +1915,32 @@ function listingModalContent(props) {
   </article>`;
 }
 
+/** Same premises posted by other agencies (merged in the build). */
+function listingDupsHtml(props) {
+  const d = props.dups || [];
+  if (!d.length) return "";
+  const rows = d.map((x) => `<li><a href="${escapeHtml(x.u || "#")}" target="_blank" rel="noopener noreferrer">${escapeHtml(x.ag || "Another agency")}</a><span>${x.p ? `${formatNumber(x.p)} €` : ""}${x.sz ? ` · ${formatNumber(x.sz)} m²` : ""}</span></li>`).join("");
+  return `<div class="od-box"><h4>Also listed by ${d.length} other ${d.length === 1 ? "agency" : "agencies"}</h4><p class="unit-note">Same premises (same spot, size and price) — shown once here.</p><ul class="od-list">${rows}</ul></div>`;
+}
+
+/** Facts around the door from open data: pedestrian counter, car parks, loading bays, census section. */
+function listingOpenDataHtml(props) {
+  const o = props.od;
+  if (!o) return "";
+  const rows = [];
+  const fmt = (n) => formatNumber(Math.round(n));
+  if (o.ped) rows.push(["Pedestrians", `${fmt(o.ped[0])} people/day`, `Madrid counter on ${o.ped[2]}, ${o.ped[1]} m away${o.ped[1] > 250 ? " (too far to score)" : ""}`]);
+  if (o.pk) rows.push(["Public car parks", o.pk[0] ? `${o.pk[0]} within 300 m` : "None within 300 m", o.pk[0] ? `nearest ${o.pk[1]} m${o.pk[2] ? ` · ${fmt(o.pk[2])} spaces` : ""}` : "OpenStreetMap"]);
+  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", props.m === "Madrid" ? "Madrid city loading zones + OpenStreetMap" : "OpenStreetMap only (Barcelona data unavailable)"]);
+  rows.push(["Daytime crowd", `${o.of || 0} offices · ${o.sc || 0} schools`, "within 400 m, OpenStreetMap"]);
+  const s = o.sec;
+  if (s) rows.push(["Census section", `${s.hinc ? `${fmt(s.hinc)} €/household` : "—"}`, [s.hh ? `${String(s.hh).replace(".", ",")} people/home` : "", s.age ? `average age ${String(s.age).replace(".", ",")}` : "", s.p65 != null ? `${String(s.p65).replace(".", ",")}% over 65` : "", `INE ${s.yr || ""}`].filter(Boolean).join(" · ")]);
+  return `<div class="od-box"><h4>Around the door (open data)</h4><ul class="od-list">${rows.map(([k, v, n]) => `<li><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span><small>${escapeHtml(n)}</small></li>`).join("")}</ul></div>`;
+}
+
 function listingDetailsTabHtml(props) {
   const inv = props.inv && typeof props.inv === "object" ? props.inv : {};
-  const parts = [];
+  const parts = [listingDupsHtml(props), listingOpenDataHtml(props)];
   const desc = listingDescToggleHtml({ ...props, inv });
   if (desc) parts.push(desc);
   if (Object.keys(inv).length) {
@@ -1925,7 +1948,7 @@ function listingDetailsTabHtml(props) {
     parts.push(investorFieldsHtml({ ...props, inv }));
     parts.push(listingActivityHtml(inv));
   }
-  const body = parts.filter((h) => /<(dd|li|div class="listing-desc)/.test(h || "")).join("");
+  const body = parts.filter((h) => /<(dd|li|div class="(listing-desc|od-box))/.test(h || "")).join("");
   if (!body) {
     return `<div class="empty-state"><b>No premises details for this listing</b><p>Idealista didn't publish characteristics or a description for it, or it hasn't been scraped in full yet.</p>${idealistaLink(props.u, "Check the ad on Idealista")}</div>`;
   }
@@ -2146,6 +2169,7 @@ function listingCard(props, { wrap = true } = {}) {
     <div class="tag-row">
       <span class="status-pill">Commercial premises</span>
       ${opTagHtml(props, "status-pill")}
+      ${props.dups?.length ? `<span class="status-pill status-pill--dup">+${props.dups.length} other ${props.dups.length === 1 ? "agency" : "agencies"}</span>` : ""}
     </div>
     <h3>${escapeHtml(listingHeadline(props))}</h3>
     ${[props.n, props.d].filter(Boolean).length ? locationRow(props.n, props.d) : ""}

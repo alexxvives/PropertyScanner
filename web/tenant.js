@@ -26,7 +26,7 @@ const SRC_VIVA_2025 = { url: "https://gymfactory.net/2025/05/06/simancas-y-valle
 const SRC_5G = { url: "https://fiveguys.com/wp-content/uploads/2025/07/Five-Guys-Preferred-Site-Criteria.pdf", label: "Five Guys Preferred Site Criteria (official PDF, 2025)" };
 const SRC_5G_ES = { url: "https://www.linkedin.com/company/five-guys-spain/", label: "Five Guys Spain on LinkedIn (links the PDF)" };
 const SRC_DEC = { url: "https://cincodias.elpais.com/companias/2026-03-16/decathlon-toma-los-centros-urbanos-en-su-nueva-fase-de-aperturas-en-espana.html", label: "Cinco Días, 16 Mar 2026 · City format ~500 m² (press)" };
-const SRC_DEC_EX = { url: "https://revistacentroscomerciales.com/noticias/marcas/decathlon-inaugura-un-nuevo-punto-de-venta-en-madrid/", label: "Revista Centros Comerciales 2026 · City Embajadores 1,000+ m²; Córdoba 470 m², Ourense 914 m² (press)" };
+const SRC_DEC_EX = { url: "https://revistacentroscomerciales.com/noticias/marcas/decathlon-inaugura-un-nuevo-punto-de-venta-en-madrid/", label: "Revista Centros Comerciales, 24 Apr 2026 · Decathlon City Embajadores (Madrid) 1,000+ m² (press, link checked 26 Oct 2026)" };
 const SRC_DIA = { url: "https://www.dia.es/tiendas/inmuebles", label: "dia.es · Buscamos terrenos y locales (official)" };
 const SRC_DIA_FR = { url: "https://franquicia.dia.es/metros-cuadrados-supermercado/", label: "franquicia.dia.es · franchise stores 200–500 m² (official)" };
 const SRC_CRF = { url: "https://www.carrefour.es/franquicias-carrefour-express/mas-info/modelos-de-tienda/", label: "carrefour.es · Carrefour Express store models (official)" };
@@ -203,7 +203,7 @@ const TENANTS = {
     size: { min: 400, lo: 500, hi: 900, max: 1500 },
     sources: [SRC_DEC, SRC_DEC_EX],
     hard: [
-      sizeCheck(400, SRC_DEC, false, "Press only: City format ~500 m²; 2026 examples Córdoba 470, Granada 800, Ourense 914, Madrid Embajadores 1,000+ m²."),
+      sizeCheck(400, SRC_DEC, false, "Press only: City format ~500 m²; Madrid Embajadores 1,000+ m² (checked). Córdoba 470 / Granada 800 / Ourense 914 m² not verified."),
       groundCheck(SRC_DEC, false, "Press: high-street city-centre premises. Inference."),
     ],
     soft: [
@@ -320,6 +320,23 @@ const AD_SCANS = {
   },
 };
 
+/** Evidence from open map data (OSM car parks, Madrid loading bays). Returns {result, shown} or null. */
+const MAP_SCANS = {
+  parking: (p) => {
+    const pk = p.od?.pk;
+    if (!pk) return null;
+    if (pk[0] && pk[1] <= 150) return { result: true, shown: `public car park ${pk[1]} m away${pk[2] ? ` (${pk[2]} spaces)` : ""}` };
+    if (!pk[0]) return { result: false, shown: "no public car park within 300 m" };
+    return { result: null, shown: `nearest public car park ${pk[1]} m away` };
+  },
+  loading: (p) => {
+    const ld = p.od?.ld;
+    if (!ld) return null;
+    if (ld[1] != null && ld[1] <= 75) return { result: true, shown: `street loading bay ${ld[1]} m away` };
+    return { result: null, shown: ld[1] != null ? `nearest street loading bay ${ld[1]} m away` : p.m === "Madrid" ? "no street loading bay within 300 m" : "no loading-bay data for Barcelona" };
+  },
+};
+
 /** Listings a retail tenant would never take: warehouses (nave / industrial) and price-size outliers. */
 let LISTING_MEDIANS = null;
 function listingExclusion(p) {
@@ -374,6 +391,10 @@ function evaluateTenant(tenant, listings, areaById) {
         const hit = AD_SCANS[h.id](adText, h);
         if (hit) { result = hit.result; from = "ad"; quote = hit.quote; if (hit.shown) shown = hit.shown; }
       }
+      if (result == null && MAP_SCANS[h.id]) {
+        const hit = MAP_SCANS[h.id](p);
+        if (hit) { shown = hit.shown; if (hit.result != null) { result = hit.result; from = "map"; } }
+      }
       if (h.id in mine) { result = mine[h.id]; from = "you"; }
       return { ...h, result, shown, from, quote };
     });
@@ -381,7 +402,7 @@ function evaluateTenant(tenant, listings, areaById) {
     const z = tenant.size || { min: 1000, lo: 1500, hi: 2000, max: 4000 };
     const sz = p.sz || 0;
     const parts = {
-      foot: tenantPct(c.foot, a.open_per_km2),
+      foot: p.od?.ped && p.od.ped[1] <= 250 ? 0.5 * tenantPct(c.foot, a.open_per_km2) + 0.5 * Math.max(0, Math.min(1, Math.log(p.od.ped[0] / 1000) / Math.log(80))) : tenantPct(c.foot, a.open_per_km2),
       traffic: tenantPct(c.traffic, a.traffic_veh_h),
       residents: tenantPct(c.residents, a.pop_per_km2),
       transit: tenantPct(c.transit, typeof transitValue === "function" ? transitValue(a) : null),
@@ -393,7 +414,7 @@ function evaluateTenant(tenant, listings, areaById) {
     const soft = Math.round(100 * tenant.soft.reduce((s, x) => s + x.w * parts[x.id], 0));
     const pass = checks.filter((x) => x.result === true).length;
     const fail = checks.filter((x) => x.result === false).length;
-    const confirmed = checks.filter((x) => x.result === true && x.from !== "ad").length;
+    const confirmed = checks.filter((x) => x.result === true && x.from !== "ad" && x.from !== "map").length;
     out.set(p.id, { checks, pass, confirmed, fail, unknown: checks.length - pass - fail, soft, parts, ok: fail === 0, excluded: tenant.retail ? listingExclusion(p) : "" });
   }
   return out;
@@ -406,7 +427,7 @@ function tenantSrcLink(src) {
 function tenantChecksHtml(tenant, ev, listingId) {
   if (!ev) return "";
   const icon = (r) => (r === true ? `<span class="tc tc--pass" aria-label="pass">✓</span>` : r === false ? `<span class="tc tc--fail" aria-label="fail">✗</span>` : `<span class="tc tc--unk" aria-label="unknown">?</span>`);
-  const FROM = { data: "from Idealista data", ad: "from ad text — check it", you: "your on-site check", none: "unknown — check on site" };
+  const FROM = { data: "from Idealista data", ad: "from ad text — check it", map: "from open map data — check it", you: "your on-site check", none: "unknown — check on site" };
   const seg = (c) => `<span class="tc-seg" role="group" aria-label="Set ${escapeHtml(c.label)}">${[["true", "Pass"], ["false", "Fail"], ["null", "?"]].map(([v, l]) => `<button type="button" data-tcheck="${c.id}" data-v="${v}" class="${c.from === "you" && String(c.result) === v ? "is-on" : ""}">${l}</button>`).join("")}${c.from === "you" ? `<button type="button" data-tcheck="${c.id}" data-v="clear" class="tc-reset" title="Remove my answer">reset</button>` : ""}</span>`;
   const rows = ev.checks
     .map((c) => `<li class="tc-row tc-from--${c.from}">${icon(c.result)}<div><b>${escapeHtml(c.label)}</b>${c.verified ? "" : ` <span class="tc-unv">not verified</span>`}<span class="tc-val">${escapeHtml(c.shown)}</span><span class="tc-from">${FROM[c.from]}${c.quote ? `: “${escapeHtml(c.quote.slice(0, 110))}”` : ""}</span><small>${escapeHtml(c.note)} · ${tenantSrcLink(c.src)}</small></div>${seg(c)}</li>`)

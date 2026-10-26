@@ -14,16 +14,24 @@ const SRC_ALDI_2018 = {
 
 const SRC_LIDL = { url: "https://www.expansion-lidl.es/", label: "expansion-lidl.es · Lidl expansion portal (no size sheet)" };
 const SRC_LIDL_PRESS = { url: "https://www.expansion.com/empresas/distribucion/2021/09/23/614b0ffde5fdde0b3c8b4598.html", label: "Expansión, 23 Sep 2021 · El Español 2016 (press)" };
-const SRC_LIDL_2026 = { url: "https://www.alimarket.es/alimentacion/noticia/", label: "Alimarket, recent Lidl openings (press, Oct 2026)" };
-const SRC_MERC_ROIG = { url: "https://www.larazon.es/economia/", label: "La Razón, 11 Mar 2026 · Juan Roig's 5 keys (press)" };
-const SRC_MERC_SIZE = { url: "https://blckrckt.com/", label: "blckrckt.com from Alimarket data · 2025 average opening (press)" };
+const SRC_LIDL_2026 = { url: "https://empresa.lidl.es/sala-de-prensa/lidl-mas-cerca-de-ti/lidl-inaugura-una-nueva-tienda-urbana-en-el-distrito-de-sant-marti-barcelona-tras-invertir-4-4-m-y-emplear-a-25-personas", label: "Lidl press release, 17 Sep 2026 · urban store Barcelona: 1,300 m² sales, 72 spaces (official)" };
+const SRC_LIDL_2026B = { url: "https://empresa.lidl.es/sala-de-prensa/actualidad-lidl/lidl-da-la-bienvenida-al-otono-con-cinco-nuevas-tiendas-en-espana-y-una-inversion-de-mas-de-30-m", label: "Lidl press release, autumn 2026 · five openings 1,000–1,550 m², 100–120 spaces (official)" };
+const SRC_MERC_ROIG = { url: "https://www.larazon.es/comunidad-valenciana/juan-roig-5-claves-que-debe-tener-local-que-mercadona-escoja-ser-supermercado_2026031169b12947d489bf782e165878.html", label: "La Razón, 11 Mar 2026 · Juan Roig's 5 keys (press)" };
+const SRC_MERC_SIZE = { url: "https://www.abc.es/espana/andalucia/cordoba/espectacular-mercadona-nuevo-gran-barrio-cordoba-dos-20260507235652-nts.html", label: "ABC, 7 May 2026 · Mercadona Córdoba project: 1,902 m² sales floor, 240 spaces (press)" };
 const SRC_BF = { url: "https://www.basic-fit.com/es-es/expansion", label: "basic-fit.com · Expansión (official)" };
 const SRC_BF_TYPES = { url: "https://corporate.basic-fit.com/es/real-estate/property-types", label: "corporate.basic-fit.com · Property types (official)" };
 const SRC_VIVA = { url: "https://cincodias.elpais.com/cincodias/2019/07/18/companias/1563464958_946379.html", label: "Cinco Días, 18 Jul 2019 (press)" };
-const SRC_VIVA_2023 = { url: "https://www.2playbook.com/", label: "2Playbook, 2023 openings (press)" };
+const SRC_VIVA_2023 = { url: "https://palco23.mundodeportivo.com/fitness/vivagym-abre-dos-gimnasios-entre-vitoria-y-barcelona-y-supera-los-260-en-la-peninsula", label: "Palco23, 15 Oct 2025 · new clubs 1,500+ m² (press)" };
+const SRC_VIVA_2025 = { url: "https://gymfactory.net/2025/05/06/simancas-y-vallecas-dan-la-bienvenida-a-dos-nuevos-centros-vivagym/", label: "Gym Factory, 6 May 2025 · Madrid clubs 1,200 and 1,400 m² (press)" };
 const SRC_5G = { url: "https://fiveguys.com/wp-content/uploads/2025/07/Five-Guys-Preferred-Site-Criteria.pdf", label: "Five Guys Preferred Site Criteria (official PDF, 2025)" };
 const SRC_5G_ES = { url: "https://www.linkedin.com/company/five-guys-spain/", label: "Five Guys Spain on LinkedIn (links the PDF)" };
-const SRC_DEC = { url: "https://cincodias.elpais.com/", label: "Cinco Días, 16 Mar 2026 · Decathlon City (press)" };
+const SRC_DEC = { url: "https://cincodias.elpais.com/companias/2026-03-16/decathlon-toma-los-centros-urbanos-en-su-nueva-fase-de-aperturas-en-espana.html", label: "Cinco Días, 16 Mar 2026 · City format ~500 m² (press)" };
+const SRC_DEC_EX = { url: "https://revistacentroscomerciales.com/noticias/marcas/decathlon-inaugura-un-nuevo-punto-de-venta-en-madrid/", label: "Revista Centros Comerciales 2026 · City Embajadores 1,000+ m²; Córdoba 470 m², Ourense 914 m² (press)" };
+const SRC_DIA = { url: "https://www.dia.es/tiendas/inmuebles", label: "dia.es · Buscamos terrenos y locales (official)" };
+const SRC_DIA_FR = { url: "https://franquicia.dia.es/metros-cuadrados-supermercado/", label: "franquicia.dia.es · franchise stores 200–500 m² (official)" };
+const SRC_CRF = { url: "https://www.carrefour.es/franquicias-carrefour-express/mas-info/modelos-de-tienda/", label: "carrefour.es · Carrefour Express store models (official)" };
+const SRC_CRF_AEF = { url: "https://www.aefranquicia.es/ensenas/carrefour-express/", label: "Spanish Franchise Association listing (franchisor-supplied)" };
+const SRC_BK = { url: "http://www.buscofranquicia.com/cas/ficha.php?id=53", label: "AEF official franchise book · Burger King sheet (franchisor-supplied)" };
 
 function sizeCheck(min, src, verified, note) {
   return { id: "size", ask: "What is the gross built area (m²)?", label: `Gross area ≥ ${min.toLocaleString("en-US")} m²`, src, verified, note, test: (l) => (l.sz ? l.sz >= min : null), value: (l) => (l.sz ? `${l.sz.toLocaleString("es-ES")} m²` : "size not listed") };
@@ -96,9 +104,9 @@ const TENANTS = {
     size: { min: 1100, lo: 1200, hi: 1800, max: 4000 },
     sources: [SRC_LIDL, SRC_LIDL_PRESS],
     hard: [
-      sizeCheck(1100, SRC_LIDL_PRESS, false, "Press: urban ground-floor premises from ~1,100 m²; 1,800 m² premises and 4,000 m² plots typical (Expansión 2021)."),
+      sizeCheck(1100, SRC_LIDL_2026B, true, "Lidl's own 2026 releases: new stores 1,000–1,550 m² of sales floor (urban Barcelona 1,300 m²). Older press: premises from ~1,100 m²."),
       groundCheck(SRC_LIDL_PRESS, false, "Press: 'locales comerciales en planta baja'."),
-      { id: "parking", ask: "How many parking spaces come with or are next to the premises?", label: "Parking (recent stores 70–120 spaces)", src: SRC_LIDL_2026, verified: false, note: "Recent Spanish openings (Alimarket). City-centre stores such as Madrid San Bernardo have none.", test: () => null, value: () => "not in Idealista data" },
+      { id: "parking", ask: "How many parking spaces come with or are next to the premises?", label: "Parking (recent stores 72–120 spaces)", src: SRC_LIDL_2026, verified: true, note: "Lidl 2026 releases: urban Barcelona 72 underground spaces; regional stores ~100–120. Some city-centre stores have none.", test: () => null, value: () => "not in Idealista data" },
       { id: "loading", ask: "Is there a loading/unloading bay or legal loading access for trucks?", label: "Loading / unloading access", src: null, verified: false, note: "Inferred: every supermarket needs truck deliveries.", test: () => null, value: () => "not in Idealista data" },
     ],
     soft: [
@@ -117,7 +125,7 @@ const TENANTS = {
     size: { min: 1300, lo: 1500, hi: 2200, max: 4000 },
     sources: [SRC_MERC_ROIG, SRC_MERC_SIZE],
     hard: [
-      sizeCheck(1300, SRC_MERC_SIZE, false, "No official minimum. 2025 openings averaged ~1,740 m² sales floor (Alimarket data), so ~1,300 m² gross is a practical floor."),
+      sizeCheck(1300, SRC_MERC_SIZE, false, "No official minimum. Roig (Mar 2026): the full ~8,000-product range must fit. 2026 project: 1,902 m² sales floor, 2,325 m² store, so ~1,300 m² gross is a practical floor."),
       { id: "parking", ask: "How many parking spaces come with or are next to the premises?", label: "Car access and parking", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
       { id: "loading", ask: "Can trucks load/unload without blocking the street or disturbing neighbours?", label: "Loading without disturbing neighbours", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
       { id: "staff", ask: "Is there space for staff changing rooms and a back office?", label: "Room for staff changing rooms", src: SRC_MERC_ROIG, verified: false, note: "Roig, Mar 2026 (press interview).", test: () => null, value: () => "not in Idealista data" },
@@ -152,17 +160,17 @@ const TENANTS = {
     id: "vivagym", name: "VivaGym", concept: "gym", retail: true,
     short: "Gym · ~1,000–1,900 m²", color: "#e4002b", initials: "VG",
     contact: "", contactUrl: "https://vivagym.es/",
-    blurb: "Spanish budget gym chain. No published requirements; press reports clubs averaging ~1,800 m², with recent openings of 1,000–1,900 m².",
+    blurb: "Spanish budget gym chain (260+ clubs). No published requirements; 2025 openings were 1,200–2,000 m² (Madrid 1,200 and 1,400 m², Vitoria/Cornellà 1,500+ m²).",
     size: { min: 1000, lo: 1400, hi: 1900, max: 3000 },
-    sources: [SRC_VIVA, SRC_VIVA_2023],
+    sources: [SRC_VIVA_2025, SRC_VIVA_2023, SRC_VIVA],
     hard: [
-      sizeCheck(1000, SRC_VIVA_2023, false, "Press only: 2023 openings of 1,000 and 1,900 m²; average ~1,800 m² (Cinco Días 2019)."),
+      sizeCheck(1000, SRC_VIVA_2025, false, "Press only: 2025 openings 1,200–2,000 m²; all León clubs > 1,000 m²."),
       { id: "height", ask: "What is the clear ceiling height (altura libre) in metres?", label: "Ceiling height (ask)", src: null, verified: false, note: "Not published. Inference.", test: () => null, value: () => "not in Idealista data" },
     ],
     soft: [
       { id: "residents", label: "Residents per km²", w: 0.35, src: null, verified: false, note: "inference" },
       { id: "transit", label: "Near public transport", w: 0.25, src: null, verified: false, note: "inference" },
-      { id: "sizefit", label: "Size near 1,400–1,900 m²", w: 0.3, src: SRC_VIVA, verified: false, note: "press" },
+      { id: "sizefit", label: "Size near 1,400–1,900 m²", w: 0.3, src: SRC_VIVA_2025, verified: false, note: "press" },
       { id: "income", label: "Disposable income", w: 0.1, src: null, verified: false, note: "inference" },
     ],
   },
@@ -191,11 +199,11 @@ const TENANTS = {
     id: "decathloncity", name: "Decathlon City", concept: "fashion", retail: true,
     short: "Sports retail · ~500–900 m²", color: "#3643ba", initials: "DC",
     contact: "", contactUrl: "https://www.decathlon.es/",
-    blurb: "Decathlon's city-centre format. No published requirements; press: City stores are typically ~500 m² in central streets (27 in Spain), with examples of 780 and 855 m². Mapped to the Clothing business type.",
+    blurb: "Decathlon's city-centre format (32 in Spain, 7 opening H1 2026). No published requirements; press: typically ~500 m² in central streets; 2026 openings 470–1,000+ m². Mapped to the Clothing business type.",
     size: { min: 400, lo: 500, hi: 900, max: 1500 },
-    sources: [SRC_DEC],
+    sources: [SRC_DEC, SRC_DEC_EX],
     hard: [
-      sizeCheck(400, SRC_DEC, false, "Press only: City format ~500 m²; examples 780–855 m²."),
+      sizeCheck(400, SRC_DEC, false, "Press only: City format ~500 m²; 2026 examples Córdoba 470, Granada 800, Ourense 914, Madrid Embajadores 1,000+ m²."),
       groundCheck(SRC_DEC, false, "Press: high-street city-centre premises. Inference."),
     ],
     soft: [
@@ -203,6 +211,63 @@ const TENANTS = {
       { id: "transit", label: "Near public transport", w: 0.2, src: null, verified: false, note: "inference" },
       { id: "sizefit", label: "Size near 500–900 m²", w: 0.25, src: SRC_DEC, verified: false, note: "press" },
       { id: "street", label: "Street level, ground floor", w: 0.15, src: null, verified: false, note: "inference" },
+    ],
+  },
+  dia: {
+    id: "dia", name: "Dia", concept: "grocery", retail: true,
+    short: "Supermarket · 750+ m² (own) / 150+ m² (franchise)", color: "#e30613", initials: "DI",
+    contact: "", contactUrl: SRC_DIA.url,
+    blurb: "Proximity supermarket. Official property page: central premises in large and medium cities, at least 750 m² built; or plots of 3,000 m²+ on good roads for a 1,200 m² store with 80 parking spaces. Franchise stores are 200–500 m².",
+    size: { min: 750, lo: 750, hi: 1200, max: 2000 },
+    sources: [SRC_DIA, SRC_DIA_FR],
+    hard: [
+      sizeCheck(750, SRC_DIA, true, "'Con un mínimo de 750 m² de superficie construida' (company-run stores)."),
+      groundCheck(SRC_DIA, false, "Official: 'locales comerciales céntricos'. Ground floor is inferred."),
+      { id: "city", ask: "", label: "Large or medium city", src: SRC_DIA, verified: true, note: "'En ciudades grandes y medianas'. Madrid and Barcelona pass.", test: (l) => (l.m === "Madrid" || l.m === "Barcelona" ? true : null), value: (l) => l.m || "city" },
+    ],
+    soft: [
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.3, src: SRC_DIA, verified: true, note: "'céntricos'" },
+      { id: "residents", label: "Residents per km²", w: 0.35, src: null, verified: false, note: "proximity format" },
+      { id: "sizefit", label: "Size near 750–1,200 m²", w: 0.2, src: SRC_DIA, verified: true, note: "750 m² min; 1,200 m² plot store" },
+      { id: "street", label: "Street level, ground floor", w: 0.15, src: null, verified: false, note: "inference" },
+    ],
+  },
+  carrefourexpress: {
+    id: "carrefourexpress", name: "Carrefour Express", concept: "grocery", retail: true,
+    short: "Convenience supermarket · 100+ m²", color: "#1e5bc6", initials: "CE",
+    contact: "", contactUrl: SRC_CRF.url,
+    blurb: "Franchised proximity supermarket. Official: stores from 100 m² of sales floor. The franchise association sheet adds ~120 m² minimum and towns of ~3,000+ inhabitants.",
+    size: { min: 100, lo: 150, hi: 400, max: 700 },
+    sources: [SRC_CRF, SRC_CRF_AEF],
+    hard: [
+      sizeCheck(100, SRC_CRF, true, "'Superficies a partir de 100 m² de sala de ventas'."),
+      groundCheck(SRC_CRF_AEF, false, "Street-level premises (franchise sheet)."),
+    ],
+    soft: [
+      { id: "residents", label: "Residents per km²", w: 0.4, src: null, verified: false, note: "proximity format" },
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.3, src: null, verified: false, note: "inference" },
+      { id: "sizefit", label: "Size near 150–400 m²", w: 0.15, src: SRC_CRF, verified: false, note: "100 m² min, inference above" },
+      { id: "street", label: "Street level, ground floor", w: 0.15, src: SRC_CRF_AEF, verified: false, note: "franchise sheet" },
+    ],
+  },
+  burgerking: {
+    id: "burgerking", name: "Burger King", concept: "food", retail: true,
+    short: "Burgers · 225+ m², 6 m front", color: "#d62300", initials: "BK",
+    contact: "", contactUrl: SRC_BK.url,
+    blurb: "Fast food. Franchise sheet (Spanish Franchise Association book): premises from 225 m² with 6 m frontage and a catchment of 30,000+ inhabitants; prime high streets, malls, leisure areas, stations or free-standing sites.",
+    size: { min: 225, lo: 250, hi: 450, max: 800 },
+    sources: [SRC_BK],
+    hard: [
+      sizeCheck(225, SRC_BK, true, "'Local mínimo 225 m²' (franchisor-supplied sheet)."),
+      { id: "facade", ask: "What is the street frontage in linear metres?", label: "Frontage ≥ 6 m", minFacade: 6, src: SRC_BK, verified: true, note: "'6 m de fachada'.", test: (l, inv) => (Number.isFinite(inv.facade_m) && inv.facade_m > 0 ? inv.facade_m >= 6 : inv.facade_band === "> 12 m" ? true : null), value: (l, inv) => (inv.facade_m ? `${inv.facade_m} m` : inv.facade_band || "not listed") },
+      { id: "smoke", ask: "Is there a smoke extraction outlet (salida de humos) to roof level?", label: "Smoke outlet (salida de humos)", src: null, verified: false, note: "Inferred: a grill kitchen needs one under Spanish licensing.", test: (l, inv) => (inv.smoke === true ? true : null), value: (l, inv) => (inv.smoke ? "smoke outlet listed" : "not stated") },
+      { id: "catchment", ask: "", label: "Catchment ≥ 30,000 inhabitants", src: SRC_BK, verified: true, note: "City-level check only.", test: (l) => (l.m === "Madrid" || l.m === "Barcelona" ? true : null), value: (l) => `${l.m || "city"} (city-level check)` },
+    ],
+    soft: [
+      { id: "foot", label: "Pedestrian traffic (open shops/km²)", w: 0.4, src: SRC_BK, verified: true, note: "prime commercial streets" },
+      { id: "transit", label: "Near public transport", w: 0.2, src: SRC_BK, verified: true, note: "stations listed as target sites" },
+      { id: "sizefit", label: "Size near 250–450 m²", w: 0.2, src: null, verified: false, note: "inference above 225 m²" },
+      { id: "street", label: "Street level, ground floor", w: 0.2, src: SRC_BK, verified: true, note: "high streets" },
     ],
   },
 };

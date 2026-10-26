@@ -253,6 +253,10 @@ const state = {
   query: null,
   heatmap: "fit",
   metricFilter: {},
+  chips: new Set(),
+  maxPrice: 0,
+  sizeRange: "any",
+  ticked: new Set(),
   mapStyle: "light",
   filters: { competition: true, complements: true, daytime: true, vacancies: true },
   selectedId: null,
@@ -640,6 +644,7 @@ function visitReason(props) {
 }
 
 function scoreAreas() {
+  metricCuts = null;
   const areas = visibleAreas();
   const query = state.query || parseQuery(pickerValue("business") || "bakery");
   const profile = PROFILES[query.id] || PROFILES.bakery;
@@ -744,7 +749,7 @@ function paintScores() {
   stops.forEach((stop, index) => {
     interpolate.push(stop, ramp[index]);
   });
-  const failIds = Object.keys(state.metricFilter).length ? (state.areas?.features || []).filter((f) => !passesMetricFilter(f.properties)).map((f) => f.properties.id) : [];
+  const failIds = [];
   const expression = ["case",
     ["<", ["get", "score"], 0], "#ebe4da",
     ["in", ["get", "id"], ["literal", failIds]], "#e9e5df",
@@ -793,7 +798,7 @@ function passesMetricFilter(p) {
 }
 
 function areasInView() {
-  const all = visibleAreas().filter((f) => passesMetricFilter(f.properties));
+  const all = visibleAreas();
   if (!map?.getBounds) return all;
   const b = map.getBounds();
   return all.filter((feature) => {
@@ -1031,7 +1036,7 @@ function renderListingRanking() {
           const title = listingShortTitle(item.props);
           const meta = [item.areaName, item.city].filter(Boolean).join(", ");
           const tev = state.tenantEval?.get(item.id);
-          return `<li><button type="button" data-kind="listing" data-id="${escapeHtml(item.id)}">
+          return `<li class="has-tick"><label class="tick" title="Tick to include in the PDF shortlist"><input type="checkbox" data-tick="${escapeHtml(item.id)}"${state.ticked.has(String(item.id)) ? " checked" : ""} aria-label="Add to PDF shortlist"></label><button type="button" data-kind="listing" data-id="${escapeHtml(item.id)}">
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
@@ -1040,7 +1045,8 @@ function renderListingRanking() {
       </button></li>`;
         })
         .join("")
-    : `<li><p class="pinned-empty">No property leads in this view yet.</p></li>`;
+    : `<li><p class="pinned-empty">${activeFilterCount() ? "No places match these filters — untick a chip or reset." : "No property leads in this view yet."}</p></li>`;
+  renderPdfBar();
 }
 
 function shopTitle(props) {
@@ -1182,6 +1188,7 @@ function collectRankableListings({ restrictToBounds = false } = {}) {
   for (const feature of state.listings) {
     const props = feature.properties;
     if (!listingMatchesCity(props)) continue;
+    if (!passesListingFilters(props)) continue;
     if (bounds) {
       const [lon, lat] = feature.geometry.coordinates;
       if (!bounds.contains([lon, lat])) continue;
@@ -2569,9 +2576,11 @@ function syncListings() {
     if (state.city !== "all" && city !== state.city) continue;
     if (!bounds.contains([lon, lat])) continue;
     if (state.tenant?.retail && !state.showExcluded && state.tenantEval?.get(feature.properties.id)?.excluded) continue;
+    if (!passesListingFilters(feature.properties)) continue;
     if (zoom >= 11) features.push(feature);
   }
   map.getSource(MAP_SOURCES.listings).setData({ type: "FeatureCollection", features });
+  updateChipCounts();
 }
 
 function listingNearCursor(point) {
@@ -2623,13 +2632,8 @@ function mountMapToolbar() {
         `<button type="button" class="map-style-btn${id === state.mapStyle ? " is-active" : ""}" data-style="${id}" title="${escapeHtml(style.label)}" style="--swatch:${style.swatch}"><span class="map-style-btn__dot" aria-hidden="true"></span><span class="map-style-btn__label">${escapeHtml(style.label)}</span></button>`,
     )
     .join("");
-  const seg = (id) => `<span class="mf__seg" role="group" aria-label="${escapeHtml(HEATMAPS[id].label)}">${["low", "any", "high"].map((v) => `<button type="button" data-mf="${id}" data-v="${v}" class="${(state.metricFilter[id] || "any") === v ? "is-on" : ""}">${v[0].toUpperCase() + v.slice(1)}</button>`).join("")}</span>`;
-  const n = Object.keys(state.metricFilter).length;
-  const wasOpen = mapHeatmapToolbar.querySelector("details")?.open ?? window.innerWidth > 700;
-  mapHeatmapToolbar.innerHTML = `<details class="mfbox"${wasOpen ? " open" : ""}><summary><b>Filters${n ? ` · ${n} on` : ""}</b><span class="unit-note">Low = bottom third of the city · High = top third · tap a name to colour the map</span></summary>${n ? `<button type="button" class="mf__reset" data-mf-reset>Reset filters</button>` : ""}<div class="mf">${FILTER_GROUPS.map(([title, icon, keys]) => `<section class="mf__grp"><h4><span aria-hidden="true">${icon}</span>${title}</h4>${keys.map((id) => {
-      const mode = HEATMAPS[id];
-      return `<div class="mf__row"><button type="button" class="mf__name${id === state.heatmap ? " is-active" : ""}" data-heatmap="${id}" title="Colour the map by ${escapeHtml(mode.label)}" style="--chip:${mode.ramp[2]}"><i></i>${escapeHtml(mode.label)}</button>${seg(id)}</div>`;
-    }).join("")}</section>`).join("")}</div></details>`;
+  mapHeatmapToolbar.innerHTML = chipBarHtml();
+  updateChipCounts();
 }
 
 function setHeatmapMode(id) {
@@ -3123,14 +3127,20 @@ mapHeatmapToolbar?.addEventListener("click", (event) => {
   setHeatmapMode(button.dataset.heatmap);
 });
 mapHeatmapToolbar?.addEventListener("click", (event) => {
-  const b = event.target.closest("[data-mf],[data-mf-reset]");
+  const b = event.target.closest("[data-chip],[data-chip-reset]");
   if (!b) return;
-  if (b.dataset.mfReset != null) state.metricFilter = {};
-  else if (b.dataset.v === "any") delete state.metricFilter[b.dataset.mf];
-  else state.metricFilter[b.dataset.mf] = b.dataset.v;
-  mountMapToolbar();
-  paintScores();
-  renderAreaRanking();
+  if (b.dataset.chipReset != null) { state.chips.clear(); state.maxPrice = 0; state.sizeRange = "any"; }
+  else if (state.chips.has(b.dataset.chip)) state.chips.delete(b.dataset.chip);
+  else state.chips.add(b.dataset.chip);
+  applyListingFilters();
+});
+mapHeatmapToolbar?.addEventListener("change", (event) => {
+  const s = event.target;
+  if (s.matches("[data-fprice]")) state.maxPrice = Number(s.value);
+  else if (s.matches("[data-fsize]")) state.sizeRange = s.value;
+  else if (s.matches("[data-fheat]")) { state.heatmap = s.value; if (state.areas) paintScores(); return; }
+  else return;
+  applyListingFilters();
 });
 
 function closePickers(except) {
@@ -3435,3 +3445,223 @@ document.addEventListener("click", (event) => {
 new MutationObserver(() => {
   document.querySelectorAll("img.is-loading").forEach((img) => { if (img.complete && img.naturalWidth) img.classList.remove("is-loading"); });
 }).observe(document.body, { childList: true, subtree: true });
+
+/* ---- Round 18: plain-language chips that filter the places themselves (list + map) ---- */
+const CHIP_DEFS = [
+  { id: "busy", label: "Busy street", icon: "🚶", metric: "foot", want: "high", tip: "Area in the busiest third of the city for open shops per km²" },
+  { id: "rivals", label: "Few rivals", icon: "🏪", metric: "competitors", want: "low", tip: "Area in the third of the city with the fewest competitors for this business" },
+  { id: "wealthy", label: "Wealthy area", icon: "💶", metric: "income", want: "high", tip: "Area in the top third of the city for household income" },
+  { id: "metro", label: "Near metro", icon: "🚇", metric: "metro", want: "some", tip: "At least one metro station in the area" },
+  { id: "residents", label: "Lots of residents", icon: "🏘️", metric: "popDensity", want: "high", tip: "Area in the top third of the city for residents per km²" },
+];
+const PRICE_OPTS = [[0, "Any price", null], [1, "Up to €3k/mo · €500k", [3000, 500000]], [2, "Up to €6k/mo · €1M", [6000, 1000000]], [3, "Up to €12k/mo · €2.5M", [12000, 2500000]]];
+const SIZE_OPTS = [["any", "Any size", 0, Infinity], ["s", "Under 150 m²", 0, 150], ["m", "150–500 m²", 150, 500], ["l", "500–1,500 m²", 500, 1500], ["xl", "1,500 m² +", 1500, Infinity]];
+
+function activeFilterCount() {
+  return state.chips.size + (state.maxPrice ? 1 : 0) + (state.sizeRange !== "any" ? 1 : 0);
+}
+function chipPass(def, props) {
+  const area = state.areaById?.get(props.i);
+  if (!area) return false;
+  const p = area.properties;
+  const v = Number(p[HEATMAPS[def.metric].field]);
+  if (!Number.isFinite(v)) return false;
+  if (def.want === "some") return v >= 1;
+  const c = metricCutoffs()[p.city]?.[def.metric];
+  if (!c) return false;
+  return def.want === "high" ? v >= c[1] : v <= c[0];
+}
+function pricePass(props, level = state.maxPrice) {
+  const cap = PRICE_OPTS.find((o) => o[0] === level)?.[2];
+  if (!cap) return true;
+  if (!props.p) return false;
+  return props.p <= (props.op === "rent" ? cap[0] : cap[1]);
+}
+function sizePass(props, range = state.sizeRange) {
+  const o = SIZE_OPTS.find((x) => x[0] === range);
+  if (!o || o[0] === "any") return true;
+  return props.sz ? props.sz >= o[2] && props.sz < o[3] : false;
+}
+/** `extra` lets the counter ask "how many would match if this chip were on too". */
+function passesListingFilters(props, extra = null) {
+  for (const def of CHIP_DEFS) if ((state.chips.has(def.id) || extra === def.id) && !chipPass(def, props)) return false;
+  return pricePass(props) && sizePass(props);
+}
+function chipBasePool() {
+  const bounds = map?.getBounds ? map.getBounds() : null;
+  const out = [];
+  for (const f of state.listings || []) {
+    const p = f.properties;
+    if (!listingMatchesCity(p)) continue;
+    if (state.tenant?.retail && !state.showExcluded && state.tenantEval?.get(p.id)?.excluded) continue;
+    if (bounds && !bounds.contains(f.geometry.coordinates)) continue;
+    out.push(p);
+  }
+  return out;
+}
+const placesWord = (n) => `${formatNumber(n)} ${n === 1 ? "place" : "places"}`;
+function updateChipCounts() {
+  const bar = mapHeatmapToolbar?.querySelector(".chipbar");
+  if (!bar || !state.listings?.length) return;
+  const pool = chipBasePool();
+  for (const def of CHIP_DEFS) {
+    const n = pool.filter((p) => passesListingFilters(p, def.id)).length;
+    const el = bar.querySelector(`[data-chip-n="${def.id}"]`);
+    if (el) el.textContent = formatNumber(n);
+  }
+  const total = pool.filter((p) => passesListingFilters(p)).length;
+  const t = bar.querySelector("[data-total-n]");
+  if (t) t.textContent = activeFilterCount() ? `${placesWord(total)} match` : `${placesWord(total)} in view`;
+  const noPrice = pool.filter((p) => { for (const d of CHIP_DEFS) if (state.chips.has(d.id) && !chipPass(d, p)) return false; return sizePass(p); });
+  bar.querySelectorAll("[data-fprice] option").forEach((o) => { const n = noPrice.filter((p) => pricePass(p, Number(o.value))).length; o.textContent = `${PRICE_OPTS.find((x) => x[0] === Number(o.value))[1]} (${formatNumber(n)})`; });
+  const noSize = pool.filter((p) => { for (const d of CHIP_DEFS) if (state.chips.has(d.id) && !chipPass(d, p)) return false; return pricePass(p); });
+  bar.querySelectorAll("[data-fsize] option").forEach((o) => { const n = noSize.filter((p) => sizePass(p, o.value)).length; o.textContent = `${SIZE_OPTS.find((x) => x[0] === o.value)[1]} (${formatNumber(n)})`; });
+}
+function chipBarHtml() {
+  const chips = CHIP_DEFS.map((d) => `<button type="button" class="fchip${state.chips.has(d.id) ? " is-on" : ""}" data-chip="${d.id}" aria-pressed="${state.chips.has(d.id)}" title="${escapeHtml(d.tip)}"><span aria-hidden="true">${d.icon}</span>${escapeHtml(d.label)}<em data-chip-n="${d.id}">…</em></button>`).join("");
+  const price = `<label class="fsel${state.maxPrice ? " is-on" : ""}"><span>Max price</span><select data-fprice>${PRICE_OPTS.map(([v, l]) => `<option value="${v}"${state.maxPrice === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  const size = `<label class="fsel${state.sizeRange !== "any" ? " is-on" : ""}"><span>Size</span><select data-fsize>${SIZE_OPTS.map(([v, l]) => `<option value="${v}"${state.sizeRange === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  const heatIds = ["fit", ...FILTER_GROUPS.flatMap((g) => g[2])].filter((id) => HEATMAPS[id]);
+  const heat = `<label class="fsel fsel--heat"><span>Colour map</span><select data-fheat>${heatIds.map((id) => `<option value="${id}"${state.heatmap === id ? " selected" : ""}>${id === "fit" ? "Best fit" : escapeHtml(HEATMAPS[id].label)}</option>`).join("")}</select></label>`;
+  const n = activeFilterCount();
+  return `<div class="chipbar" role="group" aria-label="Filter places"><div class="chipbar__chips">${chips}${price}${size}</div><div class="chipbar__foot"><b data-total-n>…</b>${n ? `<button type="button" class="chip-reset" data-chip-reset>Clear ${n}</button>` : ""}${heat}</div></div>`;
+}
+function applyListingFilters() {
+  mountMapToolbar();
+  syncListings();
+  renderListingRanking();
+}
+
+/* ---- Round 18: PDF shortlist (client-side, print stylesheet → "Save as PDF") ---- */
+document.addEventListener("change", (event) => {
+  const t = event.target.closest("[data-tick]");
+  if (!t) return;
+  const id = String(t.dataset.tick);
+  if (t.checked) state.ticked.add(id); else state.ticked.delete(id);
+  renderPdfBar();
+});
+document.addEventListener("click", (event) => {
+  if (event.target.closest(".tick")) event.stopPropagation();
+  const b = event.target.closest("[data-pdf-export]");
+  if (b) exportShortlist();
+  const c = event.target.closest("[data-pdf-clear]");
+  if (c) { state.ticked.clear(); renderListingRanking(); }
+}, true);
+
+function renderPdfBar() {
+  let bar = document.getElementById("pdf-bar");
+  if (!bar) {
+    bar = document.createElement("div");
+    bar.id = "pdf-bar";
+    bar.className = "pdf-bar";
+    listingRanking.insertAdjacentElement("beforebegin", bar);
+  }
+  const n = state.ticked.size;
+  bar.innerHTML = `<button type="button" class="pdf-btn" data-pdf-export>⬇ PDF shortlist · ${n ? `${n} ticked` : "top 5"}</button>${n ? `<button type="button" class="pdf-clear" data-pdf-clear>Untick all</button>` : `<span class="unit-note">Tick places to choose your own</span>`}`;
+}
+
+function shortlistRows() {
+  if (state.ticked.size) {
+    const rows = [];
+    for (const f of state.listings) {
+      const p = f.properties;
+      if (!state.ticked.has(String(p.id))) continue;
+      const area = state.areaById?.get(p.i);
+      rows.push({ id: p.id, props: p, rank: listingRank(p), city: cityOfId(p.i) || p.m || "", areaName: area?.properties?.name || p.n || "", coords: f.geometry.coordinates });
+    }
+    return rows.sort((a, b) => b.rank.pct - a.rank.pct);
+  }
+  const coords = new Map(state.listings.map((f) => [f.properties.id, f.geometry.coordinates]));
+  return buildOverallRanking().slice(0, 5).map((r) => ({ ...r, coords: coords.get(r.id) }));
+}
+
+async function shortlistMapImage(rows) {
+  const cam = { center: map.getCenter(), zoom: map.getZoom(), bearing: map.getBearing(), pitch: map.getPitch() };
+  const pad = mapPadding();
+  const pts = rows.map((r) => r.coords).filter(Boolean);
+  let restoreLayers = () => {};
+  try {
+    if (pts.length === 1) map.jumpTo({ center: pts[0], zoom: 15, padding: pad });
+    else if (pts.length) {
+      const b = pts.reduce((acc, c) => acc.extend(c), new maplibregl.LngLatBounds(pts[0], pts[0]));
+      map.fitBounds(b, { padding: { top: pad.top + 50, bottom: pad.bottom + 50, left: pad.left + 60, right: pad.right + 60 }, duration: 0, maxZoom: 16 });
+    }
+    const hid = [MAP_LAYERS.listings].filter((id) => map.getLayer(id));
+    hid.forEach((id) => map.setLayoutProperty(id, "visibility", "none"));
+    restoreLayers = () => hid.forEach((id) => map.setLayoutProperty(id, "visibility", "visible"));
+    await new Promise((res) => { let done = false; const fin = () => { if (!done) { done = true; res(); } }; map.once("idle", fin); setTimeout(fin, 5000); });
+    const src = await new Promise((res) => { map.once("render", () => res(map.getCanvas())); map.triggerRepaint(); });
+    const cw = src.clientWidth, ch = src.clientHeight, sx = src.width / cw;
+    const x0 = pad.left, y0 = pad.top, w = Math.max(200, cw - pad.left - pad.right), h = Math.max(150, ch - pad.top - pad.bottom);
+    const out = document.createElement("canvas");
+    out.width = Math.round(w * sx); out.height = Math.round(h * sx);
+    out.getContext("2d").drawImage(src, x0 * sx, y0 * sx, w * sx, h * sx, 0, 0, out.width, out.height);
+    const pins = rows.map((r, i) => { if (!r.coords) return null; const q = map.project(r.coords); return { n: i + 1, x: ((q.x - x0) / w) * 100, y: ((q.y - y0) / h) * 100 }; }).filter(Boolean);
+    return { url: out.toDataURL("image/jpeg", 0.88), pins, ratio: h / w };
+  } catch (err) {
+    console.warn("map snapshot failed", err);
+    return null;
+  } finally {
+    restoreLayers();
+    map.jumpTo({ ...cam, padding: pad });
+  }
+}
+
+function pdfPlaceHtml(r, i, tenant) {
+  const p = r.props, x = p.x || {};
+  const img = (x.imgs?.length ? x.imgs[0] : x.thumb) || "";
+  const area = state.areaById?.get(p.i)?.properties;
+  const pm2 = p.p && p.sz ? Math.round(p.p / p.sz) : null;
+  const price = p.p ? `${formatNumber(p.p)} €${p.op === "rent" ? " /month" : ""}` : "Price on request";
+  const tev = state.tenantEval?.get(p.id);
+  let good = [], bad = [];
+  if (area) { const w = whyReasons(area); good = w.strengths.map((q) => q.line || q.label); bad = w.watch.map((q) => q.line || q.label); }
+  if (tev) {
+    good = [...tev.checks.filter((c) => c.result === true).map((c) => `${c.label}: ${c.shown || c.value || "ok"}`), ...good];
+    bad = [...tev.checks.filter((c) => c.result === false).map((c) => `${c.label}: ${c.shown || c.value || "fails"}`), ...tev.checks.filter((c) => c.result == null).slice(0, 3).map((c) => `To check: ${c.label}`), ...bad];
+  }
+  const li = (arr, k) => arr.slice(0, 5).map((t) => `<li class="pr pr--${k}"><i>${k === "good" ? "✓" : "!"}</i>${escapeHtml(String(t))}</li>`).join("");
+  const kpi = (l, v) => `<div class="pk"><small>${l}</small><b>${v}</b></div>`;
+  return `<section class="ps-page ps-place">
+    <header class="pp-head"><span class="pp-num">${i + 1}</span><div><h2>${escapeHtml(listingShortTitle(p))}</h2><p>${escapeHtml(listingPlaceLine(p))}</p></div><div class="pp-score"><b>${r.rank?.pct ?? "—"}</b><small>/100${tenant ? ` · ${escapeHtml(tenant)}` : ""}</small></div></header>
+    ${img ? `<div class="pp-photo"><img src="${escapeHtml(img)}" alt=""></div>` : `<div class="pp-photo pp-photo--none">No photo published</div>`}
+    <div class="pp-kpis">${kpi(p.op === "rent" ? "Rent" : "Price", price)}${kpi("Per m²", pm2 ? `${formatNumber(pm2)} €` : "—")}${kpi("Size", p.sz ? `${formatNumber(p.sz)} m²` : "—")}${kpi("Area", escapeHtml(r.areaName || "—"))}</div>
+    <div class="pp-cols"><div><h3>Why it works</h3><ul>${li(good, "good") || '<li class="pr">Nothing stands out.</li>'}</ul></div><div><h3>Watch-outs</h3><ul>${li(bad, "bad") || '<li class="pr">None flagged.</li>'}</ul></div></div>
+    ${p.u ? `<p class="pp-link">Idealista ad: <a href="${escapeHtml(p.u)}">${escapeHtml(p.u)}</a></p>` : ""}
+  </section>`;
+}
+
+async function exportShortlist({ print = true } = {}) {
+  const rows = shortlistRows();
+  if (!rows.length) { alert("No places to export — zoom to an area with listings first."); return null; }
+  const btn = document.querySelector("[data-pdf-export]");
+  if (btn) btn.textContent = "Preparing PDF…";
+  await Promise.all(rows.map((r) => ensureListingDetail(r.props)));
+  const snap = await shortlistMapImage(rows);
+  const tenant = state.tenant?.name || state.query?.label || "";
+  const cities = [...new Set(rows.map((r) => r.city).filter(Boolean))].join(" · ") || (state.city !== "all" ? state.city : "Spain");
+  const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const pins = snap ? snap.pins.map((q) => `<span class="cv-pin" style="left:${q.x}%;top:${q.y}%">${q.n}</span>`).join("") : "";
+  const list = rows.map((r, i) => `<li><span class="cv-n">${i + 1}</span><span class="cv-t">${escapeHtml(listingShortTitle(r.props))}<small>${escapeHtml(r.areaName || "")}${r.props.p ? ` · ${formatNumber(r.props.p)} €${r.props.op === "rent" ? "/mo" : ""}` : ""}${r.props.sz ? ` · ${formatNumber(r.props.sz)} m²` : ""}</small></span><b>${r.rank?.pct ?? ""}</b></li>`).join("");
+  const filters = [...CHIP_DEFS.filter((d) => state.chips.has(d.id)).map((d) => d.label), state.maxPrice ? PRICE_OPTS.find((o) => o[0] === state.maxPrice)[1] : "", state.sizeRange !== "any" ? SIZE_OPTS.find((o) => o[0] === state.sizeRange)[1] : ""].filter(Boolean);
+  let sheet = document.getElementById("print-sheet");
+  if (!sheet) { sheet = document.createElement("div"); sheet.id = "print-sheet"; document.body.appendChild(sheet); }
+  sheet.innerHTML = `<section class="ps-page ps-cover">
+    <p class="cv-kicker">Property Scanner · shortlist</p>
+    <h1>${escapeHtml(tenant || "Best places")}</h1>
+    <p class="cv-sub">${escapeHtml(cities)} · ${rows.length} ${rows.length === 1 ? "place" : "places"} · ${today}${filters.length ? `<br>Filters: ${escapeHtml(filters.join(", "))}` : ""}</p>
+    ${snap ? `<div class="cv-map" style="aspect-ratio:${(1 / snap.ratio).toFixed(3)}"><img src="${snap.url}" alt="Map of the shortlisted places">${pins}</div>` : ""}
+    <ol class="cv-list">${list}</ol>
+    <p class="cv-foot">Scores are 0–100 ranks against the other listings in the same city. Check every place on site before signing.</p>
+  </section>${rows.map((r, i) => pdfPlaceHtml(r, i, tenant)).join("")}`;
+  renderPdfBar();
+  await Promise.all([...sheet.querySelectorAll("img")].map((im) => (im.complete ? null : new Promise((res) => { im.onload = im.onerror = res; setTimeout(res, 6000); }))));
+  document.body.classList.add("printing");
+  const prevTitle = document.title;
+  document.title = `Shortlist ${tenant || ""} ${cities}`.trim();
+  if (print) {
+    window.addEventListener("afterprint", () => { document.body.classList.remove("printing"); document.title = prevTitle; }, { once: true });
+    window.print();
+  }
+  return rows.length;
+}

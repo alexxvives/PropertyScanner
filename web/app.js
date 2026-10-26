@@ -3631,27 +3631,128 @@ async function shortlistMapImage(rows) {
   }
 }
 
-function pdfPlaceHtml(r, i, tenant) {
-  const p = r.props, x = p.x || {};
+/* ---------- Shortlist PDF (A4 report) ---------- */
+const PDF_LOGOS = { aldi: "aldi.png", lidl: "lidl.svg", mercadona: "mercadona.svg", vivagym: "vivagym.png", basicfit: "basicfit.png", fiveguys: "fiveguys.svg", decathloncity: "decathlon.svg", dia: "dia.svg", burgerking: "burgerking.svg" };
+const pdfHue = (v) => `hsl(${Math.round(Math.max(0, Math.min(100, v)) * 1.2)}, 62%, 40%)`;
+const pdfTint = (v) => `hsl(${Math.round(Math.max(0, Math.min(100, v)) * 1.2)}, 60%, 94%)`;
+const PS_MARK = `<svg viewBox="0 0 32 32" width="22" height="22" aria-hidden="true"><rect width="32" height="32" rx="8" fill="#1f6f5c"/><path d="M16 7a6.5 6.5 0 0 0-6.5 6.5c0 4.9 6.5 11.5 6.5 11.5s6.5-6.6 6.5-11.5A6.5 6.5 0 0 0 16 7z" fill="#fff"/><circle cx="16" cy="13.5" r="2.4" fill="#1f6f5c"/></svg>`;
+
+function pdfRing(v, size = 64, stroke = 7) {
+  const r = (size - stroke) / 2, c = 2 * Math.PI * r, val = Number.isFinite(v) ? v : 0;
+  return `<svg class="pr-ring" viewBox="0 0 ${size} ${size}" width="${size}" height="${size}"><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="#e8ece9" stroke-width="${stroke}"/><circle cx="${size / 2}" cy="${size / 2}" r="${r}" fill="none" stroke="${pdfHue(val)}" stroke-width="${stroke}" stroke-linecap="round" stroke-dasharray="${(c * val) / 100} ${c}" transform="rotate(-90 ${size / 2} ${size / 2})"/><text x="50%" y="50%" dy=".35em" text-anchor="middle" font-size="${size * 0.32}" font-weight="700" fill="#14231e">${Number.isFinite(v) ? Math.round(v) : "—"}</text></svg>`;
+}
+function pdfGauge(v01, label, note) {
+  const v = Number.isFinite(v01) ? Math.max(0, Math.min(1, v01)) : null;
+  const a = Math.PI * (1 - (v ?? 0)), x = 50 + 38 * Math.cos(a), y = 48 - 38 * Math.sin(a);
+  const arc = v == null ? "" : `<path d="M12 48 A38 38 0 0 1 ${x.toFixed(1)} ${y.toFixed(1)}" fill="none" stroke="${pdfHue(v * 100)}" stroke-width="8" stroke-linecap="round"/>`;
+  return `<div class="pg"><svg viewBox="0 0 100 56" width="100%"><path d="M12 48 A38 38 0 0 1 88 48" fill="none" stroke="#e8ece9" stroke-width="8" stroke-linecap="round"/>${arc}<text x="50" y="46" text-anchor="middle" font-size="15" font-weight="700" fill="#14231e">${v == null ? "n/a" : `${Math.round(v * 100)}`}</text></svg><b>${escapeHtml(label)}</b><small>${escapeHtml(note)}</small></div>`;
+}
+function pdfBar(label, v01, w) {
+  const v = Math.round((v01 ?? 0) * 100);
+  return `<div class="pb"><span>${escapeHtml(label)}<em>${w ? ` ${Math.round(w * 100)}%` : ""}</em></span><i><s style="width:${v}%;background:${pdfHue(v)}"></s></i><b>${v}</b></div>`;
+}
+function pdfTenantMark(tenantObj, label, { big = false } = {}) {
+  const file = tenantObj && PDF_LOGOS[tenantObj.id];
+  if (file) return `<div class="pl-logo${big ? " pl-logo--big" : ""}"><img src="logos/${file}" alt="${escapeHtml(tenantObj.name)} logo"></div>`;
+  const name = label || "Your business";
+  return `<div class="pl-logo pl-logo--word${big ? " pl-logo--big" : ""}" style="--c:${tenantObj?.color || "#1f6f5c"}"><span>${escapeHtml(name.slice(0, 1).toUpperCase())}</span><b>${escapeHtml(name)}</b></div>`;
+}
+/** Percentile (0–1) of v among values. */
+function pdfPct(values, v) {
+  const s = values.filter(Number.isFinite);
+  if (!s.length || !Number.isFinite(v)) return null;
+  return s.filter((x) => x < v).length / Math.max(1, s.length - 1);
+}
+function pdfCityStats(rows) {
+  const inc = {};
+  for (const f of state.listings) { const p = f.properties; const h = p.od?.sec?.hinc; if (Number.isFinite(h)) (inc[p.m] ||= []).push(h); }
+  return { inc };
+}
+function pdfSignals(r, stats) {
+  const p = r.props, micro = (r.rank?.parts || []).find((x) => x.id === "micro"), sub = micro?.sub || {};
+  return {
+    spend: pdfPct(stats.inc[p.m] || [], p.od?.sec?.hinc),
+    foot: sub.foot ?? null,
+    rivals: sub.gap ?? null,
+    empty: sub.health ?? null,
+    day: sub.daytime ?? null,
+  };
+}
+function pdfRules(tev) {
+  if (!tev) return { pass: 0, check: 0, fail: 0, html: "" };
+  const k = (c) => (c.result === true ? (c.from === "ad" ? "check" : "pass") : c.result === false ? "fail" : "check");
+  const n = { pass: 0, check: 0, fail: 0 };
+  const html = tev.checks.map((c) => { const s = k(c); n[s]++; return `<li class="rb rb--${s}"><span>${s === "pass" ? "PASS" : s === "fail" ? "FAIL" : "CHECK"}</span><div><b>${escapeHtml(c.label)}</b><small>${escapeHtml(String(c.shown || c.value?.() || ""))}</small></div></li>`; }).join("");
+  return { ...n, html };
+}
+const PDF_ICONS = {
+  euro: '<path d="M17 6.5A6 6 0 1 0 17 17.5M5 10.5h8M5 13.5h8"/>',
+  size: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/>',
+  ratio: '<path d="M5 19L19 5M7 7h.01M17 17h.01"/>',
+  floor: '<path d="M3 21h18M5 21V9l7-5 7 5v12M10 21v-6h4v6"/>',
+  door: '<path d="M4 20h16M7 20V5h10v15M14 12h.01"/>',
+  clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
+  walk: '<circle cx="13" cy="4.5" r="1.5"/><path d="M9 21l2-6 3 3v3M8 11l3-3 3 1 2 3M11 15l1-5"/>',
+  people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2.5-2-4.3-4-4.8"/>',
+};
+const pdfIcon = (k) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PDF_ICONS[k]}</svg>`;
+
+function pdfPlaceHtml(r, i, ctx) {
+  const p = r.props, x = p.x || {}, inv = p.inv || {};
   const img = (x.imgs?.length ? x.imgs[0] : x.thumb) || "";
-  const area = state.areaById?.get(p.i)?.properties;
   const pm2 = p.p && p.sz ? Math.round(p.p / p.sz) : null;
-  const price = p.p ? `${formatNumber(p.p)} €${p.op === "rent" ? " /month" : ""}` : "Price on request";
-  const tev = state.tenantEval?.get(p.id);
-  let good = [], bad = [];
-  if (area) { const w = whyReasons(area); good = w.strengths.map((q) => q.line || q.label); bad = w.watch.map((q) => q.line || q.label); }
-  if (tev) {
-    good = [...tev.checks.filter((c) => c.result === true).map((c) => `${c.label}: ${c.shown || c.value || "ok"}`), ...good];
-    bad = [...tev.checks.filter((c) => c.result === false).map((c) => `${c.label}: ${c.shown || c.value || "fails"}`), ...tev.checks.filter((c) => c.result == null).slice(0, 3).map((c) => `To check: ${c.label}`), ...bad];
-  }
-  const li = (arr, k) => arr.slice(0, 5).map((t) => `<li class="pr pr--${k}"><i>${k === "good" ? "✓" : "!"}</i>${escapeHtml(String(t))}</li>`).join("");
-  const kpi = (l, v) => `<div class="pk"><small>${l}</small><b>${v}</b></div>`;
-  return `<section class="ps-page ps-place">
-    <header class="pp-head"><span class="pp-num">${i + 1}</span><div><h2>${escapeHtml(listingShortTitle(p))}</h2><p>${escapeHtml(listingPlaceLine(p))}</p></div><div class="pp-score"><b>${r.rank?.pct ?? "—"}</b><small>/100${tenant ? ` · ${escapeHtml(tenant)}` : ""}</small></div></header>
-    ${img ? `<div class="pp-photo"><img src="${escapeHtml(img)}" alt=""></div>` : `<div class="pp-photo pp-photo--none">No photo published</div>`}
-    <div class="pp-kpis">${kpi(p.op === "rent" ? "Rent" : "Price", price)}${kpi("Per m²", pm2 ? `${formatNumber(pm2)} €` : "—")}${kpi("Size", p.sz ? `${formatNumber(p.sz)} m²` : "—")}${kpi("Area", escapeHtml(r.areaName || "—"))}</div>
-    <div class="pp-cols"><div><h3>Why it works</h3><ul>${li(good, "good") || '<li class="pr">Nothing stands out.</li>'}</ul></div><div><h3>Watch-outs</h3><ul>${li(bad, "bad") || '<li class="pr">None flagged.</li>'}</ul></div></div>
-    ${p.u ? `<p class="pp-link">Idealista ad: <a href="${escapeHtml(p.u)}">${escapeHtml(p.u)}</a></p>` : ""}
+  const price = p.p ? `${formatNumber(p.p)} €${p.op === "rent" ? "/mo" : ""}` : "On request";
+  const sig = pdfSignals(r, ctx.stats);
+  const parts = r.rank?.parts || [];
+  const rules = pdfRules(state.tenantEval?.get(p.id));
+  const od = p.od || {};
+  const tile = (ic, label, val) => `<div class="pt"><i>${pdfIcon(ic)}</i><small>${escapeHtml(label)}</small><b>${escapeHtml(val)}</b></div>`;
+  const days = inv.days_on_market ?? null;
+  const tiles = [
+    tile("euro", p.op === "rent" ? "Rent" : "Price", price),
+    tile("ratio", "Per m²", pm2 ? `${formatNumber(pm2)} €` : "—"),
+    tile("size", "Size", p.sz ? `${formatNumber(p.sz)} m²` : "—"),
+    tile("floor", "Floor", inv.floor || x.floor || "—"),
+    tile("walk", "People/day", od.ped && od.ped[1] <= 250 ? formatNumber(Math.round(od.ped[0])) : "no counter"),
+    tile("people", "Household income", od.sec?.hinc ? `${formatNumber(Math.round(od.sec.hinc / 1000))}k €` : "—"),
+  ].join("");
+  const map = ctx.maps[i];
+  const ctxLine = [od.pk ? (od.pk[0] ? `Public car park ${od.pk[1]} m` : "No public car park ≤300 m") : "", od.ld?.[1] != null ? `Street loading bay ${od.ld[1]} m` : "", p.dups?.length ? `Also listed by ${p.dups.length} other ${p.dups.length === 1 ? "agency" : "agencies"}` : ""].filter(Boolean);
+  return `<section class="ps-page pp">
+    <header class="pp-top"><span class="pp-n">${i + 1}</span><div class="pp-tt"><h2>${escapeHtml(listingShortTitle(p))}</h2><p>${escapeHtml(listingPlaceLine(p))}</p></div><div class="pp-brand">${PS_MARK}</div></header>
+    <div class="pp-hero">
+      <div class="pp-photo">${img ? `<img src="${escapeHtml(img)}" alt="">` : `<div class="pp-nophoto">No photo published</div>`}<span class="pp-op">${p.op === "rent" ? "For rent" : "For sale"}</span></div>
+      <div class="pp-score">${pdfRing(r.rank?.pct, 104, 10)}<small>Rank vs ${escapeHtml(r.rank?.group || "same city")}</small>
+        <div class="pp-bars">${parts.map((q) => pdfBar(q.label.replace(/ \(.+\)$/, ""), q.value, q.weight)).join("")}</div></div>
+    </div>
+    <div class="pp-tiles">${tiles}</div>
+    <h3 class="pp-h">Versus the rest of ${escapeHtml(p.m || "the city")}</h3>
+    <div class="pp-gauges">${pdfGauge(sig.spend, "Spending power", "household income, INE 2024")}${pdfGauge(sig.foot, "Footfall", od.ped && od.ped[1] <= 250 ? "with a real counter" : "shops open nearby")}${pdfGauge(sig.rivals, "Few rivals", "same-type shops 300 m")}${pdfGauge(sig.empty, "Few empty units", "closed premises 300 m")}${pdfGauge(sig.day, "Daytime crowd", "offices & schools 400 m")}</div>
+    <div class="pp-low">
+      <div class="pp-map">${map ? `<img src="${map.url}" alt="Map"><span class="pp-pin" style="left:${map.pins[0]?.x ?? 50}%;top:${map.pins[0]?.y ?? 50}%"></span>` : `<div class="pp-nophoto">Map unavailable</div>`}</div>
+      <div class="pp-rules">${rules.html ? `<h3 class="pp-h">${escapeHtml(ctx.tenantName)} requirements</h3><ul>${rules.html}</ul>` : `<h3 class="pp-h">Why it scores</h3><ul class="pp-why">${parts.map((q) => `<li><b>${escapeHtml(q.label)}</b><small>${escapeHtml(q.line || "")}</small></li>`).join("")}</ul>`}
+        ${ctxLine.length ? `<p class="pp-ctx">${ctxLine.map(escapeHtml).join(" · ")} — context only, check on site</p>` : ""}</div>
+    </div>
+    <footer class="pp-foot">${p.u ? `<a href="${escapeHtml(p.u)}">${escapeHtml(p.u)}</a>` : ""}<span>${escapeHtml(ctx.sources)}</span><span>${i + 2} / ${ctx.pages}</span></footer>
+  </section>`;
+}
+
+function pdfCompareHtml(rows, ctx) {
+  const cell = (v) => (v == null ? `<td class="pc-na">—</td>` : `<td><span class="pc-chip" style="background:${pdfTint(v * 100)};color:${pdfHue(v * 100)}">${Math.round(v * 100)}</span></td>`);
+  const body = rows.map((r, i) => {
+    const p = r.props, s = pdfSignals(r, ctx.stats), ru = pdfRules(state.tenantEval?.get(p.id));
+    const pm2 = p.p && p.sz ? Math.round(p.p / p.sz) : null;
+    return `<tr><td><span class="pc-n">${i + 1}</span></td><td class="pc-name"><b>${escapeHtml(listingShortTitle(p))}</b><small>${escapeHtml(r.areaName || "")}</small></td><td>${pdfRing(r.rank?.pct, 34, 4)}</td><td class="num">${p.p ? formatNumber(p.p) + " €" : "—"}</td><td class="num">${pm2 ? formatNumber(pm2) : "—"}</td><td class="num">${p.sz ? formatNumber(p.sz) : "—"}</td>${cell(s.spend)}${cell(s.foot)}${cell(s.rivals)}${cell(s.day)}${ctx.tenantEval ? `<td class="pc-rules"><span class="rb--pass">${ru.pass}</span><span class="rb--check">${ru.check}</span><span class="rb--fail">${ru.fail}</span></td>` : ""}</tr>`;
+  }).join("");
+  return `<section class="ps-page pc">
+    <header class="pp-top"><div class="pp-tt"><h2>Side by side</h2><p>All ${rows.length} places on one page. Coloured scores are 0–100 versus every listing in the same city (green = better).</p></div><div class="pp-brand">${PS_MARK}</div></header>
+    <table class="pc-t"><thead><tr><th></th><th>Place</th><th>Score</th><th class="num">Price</th><th class="num">€/m²</th><th class="num">m²</th><th>Spending<br>power</th><th>Footfall</th><th>Few<br>rivals</th><th>Daytime<br>crowd</th>${ctx.tenantEval ? `<th>Rules<br><small>pass · check · fail</small></th>` : ""}</tr></thead><tbody>${body}</tbody></table>
+    <div class="pc-method"><h3 class="pp-h">How to read this report</h3><div class="pc-m3">
+      <div><b>Score</b><p>30% neighbourhood, 25% the block around the door, 25% the unit, 20% price vs the 12 nearest comparable listings. Ranked within the same city and sale/rent.</p></div>
+      <div><b>Signals</b><p>Spending power from INE household income by census section; footfall from shop density plus Madrid pedestrian counters where one is within 250 m; rivals and empty units from the city premises censuses.</p></div>
+      <div><b>Rules</b><p>PASS only when listing data confirms it. A nearby public car park or street loading bay is context, never a pass: it stays CHECK until seen on site.</p></div>
+    </div></div>
+    <footer class="pp-foot"><span></span><span>${escapeHtml(ctx.sources)}</span><span>${ctx.pages} / ${ctx.pages}</span></footer>
   </section>`;
 }
 
@@ -3662,27 +3763,44 @@ async function exportShortlist({ print = true } = {}) {
   if (btn) btn.textContent = "Preparing PDF…";
   await Promise.all(rows.map((r) => ensureListingDetail(r.props)));
   const snap = await shortlistMapImage(rows);
-  const tenant = state.tenant?.name || state.query?.label || "";
+  const maps = [];
+  for (const r of rows) maps.push(await shortlistMapImage([r]));
+  const tenantObj = state.tenant || null;
+  const tenantName = tenantObj?.name || state.query?.label || "";
   const cities = [...new Set(rows.map((r) => r.city).filter(Boolean))].join(" · ") || (state.city !== "all" ? state.city : "Spain");
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
+  const nList = state.listings.length;
+  const ctx = {
+    stats: pdfCityStats(rows), maps, tenantName, tenantEval: !!state.tenantEval && !!tenantObj, pages: rows.length + 2,
+    sources: `Based on ${formatNumber(nList)} listings (Idealista, deduplicated) · INE 2024 income atlas · Madrid pedestrian counters · Madrid & Barcelona premises censuses · OpenStreetMap`,
+  };
   const pins = snap ? snap.pins.map((q) => `<span class="cv-pin" style="left:${q.x}%;top:${q.y}%">${q.n}</span>`).join("") : "";
-  const list = rows.map((r, i) => `<li><span class="cv-n">${i + 1}</span><span class="cv-t">${escapeHtml(listingShortTitle(r.props))}<small>${escapeHtml(r.areaName || "")}${r.props.p ? ` · ${formatNumber(r.props.p)} €${r.props.op === "rent" ? "/mo" : ""}` : ""}${r.props.sz ? ` · ${formatNumber(r.props.sz)} m²` : ""}</small></span><b>${r.rank?.pct ?? ""}</b></li>`).join("");
+  const best = Math.max(...rows.map((r) => r.rank?.pct ?? 0));
+  const passAll = ctx.tenantEval ? rows.filter((r) => pdfRules(state.tenantEval.get(r.props.id)).fail === 0).length : null;
+  const list = rows.map((r, i) => `<li><span class="cv-n">${i + 1}</span><span class="cv-t"><b>${escapeHtml(listingShortTitle(r.props))}</b><small>${escapeHtml(r.areaName || "")}${r.props.p ? ` · ${formatNumber(r.props.p)} €${r.props.op === "rent" ? "/mo" : ""}` : ""}${r.props.sz ? ` · ${formatNumber(r.props.sz)} m²` : ""}</small></span><i class="cv-bar"><s style="width:${r.rank?.pct ?? 0}%;background:${pdfHue(r.rank?.pct ?? 0)}"></s></i><b class="cv-s" style="color:${pdfHue(r.rank?.pct ?? 0)}">${r.rank?.pct ?? ""}</b></li>`).join("");
   const filters = [...CHIP_DEFS.filter((d) => state.chips.has(d.id)).map((d) => d.label), state.maxPrice ? PRICE_OPTS.find((o) => o[0] === state.maxPrice)[1] : "", state.sizeRange !== "any" ? SIZE_OPTS.find((o) => o[0] === state.sizeRange)[1] : ""].filter(Boolean);
+  const kpi = (v, l) => `<div class="cv-k"><b>${v}</b><small>${l}</small></div>`;
   let sheet = document.getElementById("print-sheet");
   if (!sheet) { sheet = document.createElement("div"); sheet.id = "print-sheet"; document.body.appendChild(sheet); }
-  sheet.innerHTML = `<section class="ps-page ps-cover">
-    <p class="cv-kicker">Property Scanner · shortlist</p>
-    <h1>${escapeHtml(tenant || "Best places")}</h1>
-    <p class="cv-sub">${escapeHtml(cities)} · ${rows.length} ${rows.length === 1 ? "place" : "places"} · ${today}${filters.length ? `<br>Filters: ${escapeHtml(filters.join(", "))}` : ""}</p>
-    ${snap ? `<div class="cv-map" style="aspect-ratio:${(1 / snap.ratio).toFixed(3)}"><img src="${snap.url}" alt="Map of the shortlisted places">${pins}</div>` : ""}
-    <ol class="cv-list">${list}</ol>
-    <p class="cv-foot">Scores are 0–100 ranks against the other listings in the same city. Check every place on site before signing.</p>
-  </section>${rows.map((r, i) => pdfPlaceHtml(r, i, tenant)).join("")}`;
+  sheet.innerHTML = `<section class="ps-page cv">
+    <div class="cv-band">
+      <div class="cv-brand">${PS_MARK}<span>Property Scanner</span><em>${escapeHtml(today)}</em></div>
+      <div class="cv-hero">${pdfTenantMark(tenantObj, tenantName, { big: true })}
+        <div><p class="cv-kicker">Location shortlist${tenantObj ? " · prepared for" : ""}</p><h1>${escapeHtml(tenantName || "Best places")}</h1><p class="cv-sub">${rows.length} ${rows.length === 1 ? "premises" : "premises"} in ${escapeHtml(cities)}, ranked on data${filters.length ? ` · filters: ${escapeHtml(filters.join(", "))}` : ""}</p></div></div>
+      <div class="cv-kpis">${kpi(formatNumber(nList), "listings analysed")}${kpi(rows.length, "on this shortlist")}${kpi(best, "best score / 100")}${passAll != null ? kpi(`${passAll}/${rows.length}`, "no failed rule") : kpi("5", "open data sources")}</div>
+    </div>
+    <div class="cv-body">
+      ${snap ? `<div class="cv-map" style="aspect-ratio:${Math.max(1.3, 1 / snap.ratio).toFixed(3)}"><img src="${snap.url}" alt="Map of the shortlisted places">${pins}</div>` : ""}
+      <ol class="cv-list">${list}</ol>
+      <div class="cv-legend"><span>Score</span><i></i><small>0 weak</small><small>100 strong</small></div>
+    </div>
+    <footer class="pp-foot"><span></span><span>${escapeHtml(ctx.sources)}</span><span>1 / ${ctx.pages}</span></footer>
+  </section>${rows.map((r, i) => pdfPlaceHtml(r, i, ctx)).join("")}${pdfCompareHtml(rows, ctx)}`;
   renderPdfBar();
   await Promise.all([...sheet.querySelectorAll("img")].map((im) => (im.complete ? null : new Promise((res) => { im.onload = im.onerror = res; setTimeout(res, 6000); }))));
   document.body.classList.add("printing");
   const prevTitle = document.title;
-  document.title = `Shortlist ${tenant || ""} ${cities}`.trim();
+  document.title = `Shortlist ${tenantName || ""} ${cities}`.trim();
   if (print) {
     window.addEventListener("afterprint", () => { document.body.classList.remove("printing"); document.title = prevTitle; }, { once: true });
     window.print();

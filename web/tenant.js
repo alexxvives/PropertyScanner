@@ -322,18 +322,16 @@ const AD_SCANS = {
 
 /** Evidence from open map data (OSM car parks, Madrid loading bays). Returns {result, shown} or null. */
 const MAP_SCANS = {
+  // Context only: a public car park or a street loading bay nearby never proves the premises meet the rule.
   parking: (p) => {
     const pk = p.od?.pk;
     if (!pk) return null;
-    if (pk[0] && pk[1] <= 150) return { result: true, shown: `public car park ${pk[1]} m away${pk[2] ? ` (${pk[2]} spaces)` : ""}` };
-    if (!pk[0]) return { result: false, shown: "no public car park within 300 m" };
-    return { result: null, shown: `nearest public car park ${pk[1]} m away` };
+    return { result: null, shown: pk[0] ? `unknown — public car park ${pk[1]} m away${pk[2] ? ` (${pk[2]} spaces)` : ""}, not the store's own` : "unknown — no public car park within 300 m either" };
   },
   loading: (p) => {
     const ld = p.od?.ld;
     if (!ld) return null;
-    if (ld[1] != null && ld[1] <= 75) return { result: true, shown: `street loading bay ${ld[1]} m away` };
-    return { result: null, shown: ld[1] != null ? `nearest street loading bay ${ld[1]} m away` : p.m === "Madrid" ? "no street loading bay within 300 m" : "no loading-bay data for Barcelona" };
+    return { result: null, shown: ld[1] != null ? `unknown — street loading bay ${ld[1]} m away` : p.m === "Madrid" ? "unknown — no street loading bay within 300 m" : "unknown — no loading-bay data for Barcelona" };
   },
 };
 

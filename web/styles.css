@@ -2598,3 +2598,60 @@ img.is-broken { opacity: 0; }
 #print-sheet .pc-t { font-size: 8pt; table-layout: auto; }
 #print-sheet .pc-name b { max-width: 40mm; }
 #print-sheet .pc-t td, #print-sheet .pc-t th { padding-left: 1mm; padding-right: 1mm; }
+/* Around this door – visual panel */
+.dp { display: grid; grid-template-columns: 200px 1fr; gap: 18px; align-items: center; margin: 6px 0 14px; }
+.dp-mix { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.dp-mix__n { font: 700 17px Outfit, sans-serif; fill: #14231e; }
+.dp-mix__s { font: 500 8px Outfit, sans-serif; fill: #6b7a74; text-transform: uppercase; letter-spacing: .08em; }
+.dp-mix ul { list-style: none; margin: 0; padding: 0; width: 100%; display: grid; gap: 3px; font-size: 11.5px; color: #4b5853; }
+.dp-mix li { display: flex; align-items: center; gap: 6px; }
+.dp-mix li i { width: 9px; height: 9px; border-radius: 3px; flex: none; }
+.dp-mix li b { margin-left: auto; color: #14231e; font-weight: 600; font-variant-numeric: tabular-nums; }
+.dp-tiles { display: grid; grid-template-columns: repeat(auto-fill, minmax(132px, 1fr)); gap: 8px; }
+.dp-t { --h: #5d6b66; --t: #f2f4f3; background: var(--t); border-radius: 12px; padding: 10px 11px 9px; display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.dp-t__i { color: var(--h); height: 16px; }
+.dp-t b { font-size: 19px; line-height: 1.15; color: #14231e; font-weight: 650; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.dp-t small { font-size: 11px; color: #5d6b66; line-height: 1.25; }
+.dp-t__bar { height: 5px; border-radius: 4px; background: rgba(20,35,30,.08); margin-top: 6px; overflow: hidden; }
+.dp-t__bar s { display: block; height: 100%; border-radius: 4px; background: var(--h); }
+.dp-t em { font-style: normal; font-size: 10px; color: var(--h); font-weight: 600; margin-top: 2px; }
+.dp-t--ctx { background: #fff; border: 1px dashed #cfd6d3; }
+.dp-t--ctx em { color: #8a9692; font-weight: 500; }
+@media (max-width: 640px) { .dp { grid-template-columns: 1fr; } }
+/* Round 22: consultancy-style cover + overview */
+#print-sheet .cv { padding: 18mm 20mm 14mm; background: #fbfaf7; color: #1b2421; }
+#print-sheet .cv-top { display: flex; justify-content: space-between; align-items: center; font-size: 8pt; letter-spacing: .16em; text-transform: uppercase; color: #7d857f; border-bottom: .3mm solid #1b2421; padding-bottom: 4mm; }
+#print-sheet .cv-top .cv-brand { display: flex; align-items: center; gap: 2.5mm; color: #1b2421; font-weight: 600; letter-spacing: .12em; }
+#print-sheet .cv-top .cv-brand svg { width: 6mm; height: 6mm; }
+#print-sheet .cv-top .cv-brand svg rect { fill: #1b2421; } #print-sheet .cv-top .cv-brand svg path { fill: #fbfaf7; } #print-sheet .cv-top .cv-brand svg circle { fill: #b08d57; }
+#print-sheet .cv-main { flex: 1; display: flex; flex-direction: column; justify-content: center; padding: 0 0 6mm; }
+#print-sheet .cv-logo .pl-logo { width: 46mm; height: 26mm; border-radius: 0; box-shadow: none; background: transparent; padding: 0; justify-items: start; }
+#print-sheet .cv-logo .pl-logo img { object-position: left center; }
+#print-sheet .cv-logo .pl-logo--word { display: flex; align-items: center; gap: 3mm; width: auto; }
+#print-sheet .cv-logo .pl-logo--word b { font-size: 13pt; }
+#print-sheet .cv .cv-kicker { margin: 16mm 0 5mm; font-size: 8.5pt; letter-spacing: .2em; text-transform: uppercase; color: #b08d57; font-weight: 600; opacity: 1; }
+#print-sheet .cv h1 { font-size: 46pt; line-height: 1.02; font-weight: 400; color: #1b2421; letter-spacing: -.025em; }
+#print-sheet .cv h1 span { display: block; font-size: 25pt; font-style: italic; color: #4c5752; margin-top: 4mm; letter-spacing: -.01em; }
+#print-sheet .cv-rule { display: block; width: 22mm; height: .7mm; background: #b08d57; margin: 10mm 0 7mm; }
+#print-sheet .cv .cv-sub { max-width: 130mm; font-size: 11pt; line-height: 1.6; color: #4c5752; opacity: 1; margin: 0; }
+#print-sheet .cv-stats { display: grid; grid-template-columns: repeat(4, 1fr); border-top: .3mm solid #1b2421; padding-top: 6mm; margin-bottom: 14mm; }
+#print-sheet .cv-st { padding: 0 5mm; border-left: .2mm solid #d8d3c8; }
+#print-sheet .cv-st:first-child { padding-left: 0; border-left: 0; }
+#print-sheet .cv-st b { display: block; font: 400 24pt Fraunces, Georgia, serif; color: #1b2421; letter-spacing: -.02em; white-space: nowrap; }
+#print-sheet .cv-st small { display: block; margin-top: 1.5mm; font-size: 7.5pt; letter-spacing: .14em; text-transform: uppercase; color: #7d857f; }
+#print-sheet .cv-foot { display: flex; justify-content: space-between; font-size: 7pt; color: #7d857f; letter-spacing: .04em; border-top: .2mm solid #d8d3c8; padding-top: 3mm; }
+#print-sheet .ov { gap: 5mm; }
+#print-sheet .ov .pp-head { border-bottom: .3mm solid #1b2421; padding-bottom: 3mm; }
+#print-sheet .ov .pp-kicker { display: block; font-size: 7.5pt; letter-spacing: .2em; text-transform: uppercase; color: #b08d57; font-weight: 600; margin-bottom: 1.5mm; }
+#print-sheet .ov h2 { font-size: 22pt; font-weight: 400; }
+#print-sheet .ov .cv-map { max-height: 120mm; border-radius: 2mm; }
+#print-sheet .cv-pin { background: #1b2421; box-shadow: 0 1px 4px rgba(0,0,0,.35); }
+#print-sheet .cv-logo { height: 24mm; }
+#print-sheet .cv-logo .pl-logo { width: auto; height: 24mm; display: block; }
+#print-sheet .cv-logo .pl-logo img { width: auto; height: 24mm; max-width: 60mm; display: block; }
+#print-sheet .cv-logo .pl-logo--word { display: flex; height: 24mm; }
+#print-sheet .cv-logo .pl-logo--word span { width: 16mm; height: 16mm; }
+#print-sheet .pp-h { color: #b08d57; letter-spacing: .18em; font-size: 8pt; }
+#print-sheet .pp-head h2, #print-sheet .pp-title h2 { font-weight: 400; }
+#print-sheet .ov .cv-map { max-height: 150mm; }
+#print-sheet .cv-logo .pl-logo--word span { background: #1b2421; } #print-sheet .cv-st b { font-size: 22pt; }

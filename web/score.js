@@ -175,7 +175,7 @@
         if (Number.isFinite(od.sec?.hinc)) { mw.income = ["cafe", "bakery", "beauty", "fashion"].includes(c) ? 0.25 : 0.15; mv.income = pInc(od.sec.hinc); }
         if (p.od && od.of != null) { mw.daytime = ["cafe", "bakery", "food"].includes(c) ? 0.3 : 0.12; mv.daytime = pDay((od.of || 0) + 3 * (od.sc || 0)); }
         const extra = [ped ? `counter on ${ped[2]} (${ped[1]} m): ${Math.round(ped[0]).toLocaleString("es-ES")} people/day` : "", Number.isFinite(od.sec?.hinc) ? `household income ${Math.round(od.sec.hinc).toLocaleString("es-ES")} €/yr` : "", p.od && od.of != null ? `${od.of || 0} offices, ${od.sc || 0} schools within 400 m` : "", vis ? `${Math.round(vis[1]).toLocaleString("es-ES")} daily visitors into the district (MITMA)` : ""].filter(Boolean);
-        const mSum = mw.foot + mw.pals + mw.gap + mw.health;
+        const mSum = Object.values(mw).reduce((s, w) => s + w, 0); // every signal used, incl. income/daytime
         const microV = Object.keys(mw).reduce((s, k) => s + mw[k] * mv[k], 0) / mSum;
         const unit = unitFit(p, c, band);
         const pr = prices.get(p.id);
@@ -184,7 +184,7 @@
         const priceV = pr && !odd ? pPrice(-pr.diff) : 0.5;
         const parts = [
           { id: "area", label: `Neighbourhood${a ? ` (${a.name})` : ""}`, value: areaV, weight: WEIGHTS.area, line: a ? `${a.name} scores ${a.score}/100 for this business` : "no neighbourhood data" },
-          { id: "micro", label: "Block around the door (300 m)", value: microV, weight: WEIGHTS.micro, line: `${r.nb[0]} open shops, ${r.comp.toFixed(1)} same-type rivals, ${r.pals.toFixed(1)} complementary shops, ${Math.round(r.vac * 100)}% empty/closed${extra.length ? ` · ${extra.join(" · ")}` : ""}`, sub: mv, subW: mw },
+          { id: "micro", label: "Block around the door (300 m)", value: microV, weight: WEIGHTS.micro, line: `${r.nb[0]} open shops, ${r.comp.toFixed(1)} same-type rivals, ${r.pals.toFixed(1)} complementary shops, ${Math.round(r.vac * 100)}% empty/closed${extra.length ? ` · ${extra.join(" · ")}` : ""}`, sub: mv, subW: mw, visPct: vis ? pVis(vis[1]) : null, nb: r.nb, comp: r.comp, pals: r.pals, vac: r.vac },
           { id: "unit", label: "The unit", value: unit.v, weight: WEIGHTS.unit, line: unit.pieces.map((x) => x.text).join(" · "), pieces: unit.pieces },
           { id: "price", label: op === "rent" ? "Rent vs nearby" : "Price vs nearby", value: priceV, weight: WEIGHTS.price, line: odd ? `${Math.round(pr.pm2).toLocaleString("es-ES")} €/m² vs ~${Math.round(pr.localPm2).toLocaleString("es-ES")} €/m² nearby — too far off to trust (likely a typo), counted as neutral` : pr ? `${Math.round(pr.pm2).toLocaleString("es-ES")} €/m² vs ~${Math.round(pr.localPm2).toLocaleString("es-ES")} €/m² for the 12 nearest ${op === "rent" ? "rentals" : "sales"} (size-adjusted ${pr.diff > 0 ? "+" : ""}${Math.round((Math.exp(pr.diff) - 1) * 100)}%)` : "price or size missing — neutral" },
         ];
@@ -202,7 +202,8 @@
         let below = 0; while (below < n && sorted[below] < s.score) below++;
         let eq = below; while (eq < n && sorted[eq] === s.score) eq++;
         const equal = eq - below;
-        const pct = n > 1 ? Math.round((100 * (below + (equal - 1) / 2)) / (n - 1)) : 100;
+        // floor, not round: only the single best listing shows 100, the next ones 99, 98… (no tie at the top)
+        const pct = n > 1 ? (below + equal === n && equal === 1 ? 100 : Math.min(99, Math.floor((100 * (below + (equal - 1) / 2)) / (n - 1)))) : 100;
         const top = Math.max(1, Math.ceil((100 * (n - below - equal + 1)) / n));
         const label = `${city} ${op === "rent" ? "rentals" : "sales"}`;
         result.set(s.id, { ...s, raw: Math.round(s.score), pct, top, n, group: label, text: top <= 50 ? `Top ${top}% of ${label}` : `Bottom ${Math.max(1, 100 - top + 1)}% of ${label}` });

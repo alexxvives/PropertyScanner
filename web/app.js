@@ -1840,10 +1840,50 @@ function listingFitHtml(areaProps, concept, props) {
     ${whyScoreHtml(areaProps)}
   </section>
   <section class="flat">
-    <h3 class="flat__h">Around this door${infoTip("A 10-minute walk from the entrance, drawn on the map in blue.")}</h3>
+    <h3 class="flat__h">Around this door${infoTip("Bars compare this spot with every listing in the same city (green = better for this business). Loading bays and car parks are context only.")}</h3>
+    ${props ? doorPanelHtml(props) : ""}
     <div class="visit-live fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
   </section>
   ${ageChartHtml(areaProps)}`;
+}
+
+
+/* "Around this door": visual panel from the 300 m block + open data (no live API needed) */
+function doorPanelHtml(props) {
+  const rk = listingRank(props);
+  const mp = rk.parts?.find((x) => x.id === "micro");
+  const o = props.od || {};
+  if (!mp?.nb) return "";
+  const city = (rk.group || "").split(" ")[0] || "the city";
+  const sub = mp.sub || {};
+  const nb = mp.nb, open = nb[0] || 0, empty = (nb[1] || 0) + (nb[2] || 0), riv = mp.comp || 0, pal = mp.pals || 0;
+  const fmt = (n) => formatNumber(Math.round(n));
+  // 300 m mix donut
+  const seg = [["Other open shops", Math.max(0, open - riv - pal), "#9fb4ab"], ["Helpful neighbours", pal, "hsl(140,50%,40%)"], ["Same-type rivals", riv, "hsl(10,65%,52%)"], ["Empty / closed", empty, "#d9d4c7"]];
+  const tot = seg.reduce((s, x) => s + x[1], 0) || 1;
+  let acc = 0;
+  const R = 34, C = 2 * Math.PI * R;
+  const arcs = seg.map(([, v, c]) => { const len = (C * v) / tot; const a = `<circle cx="44" cy="44" r="${R}" fill="none" stroke="${c}" stroke-width="12" stroke-dasharray="${len} ${C - len}" stroke-dashoffset="${-acc}" transform="rotate(-90 44 44)"/>`; acc += len; return a; }).join("");
+  const donut = `<div class="dp-mix"><svg viewBox="0 0 88 88" width="104" height="104">${arcs}<text x="44" y="42" text-anchor="middle" class="dp-mix__n">${fmt(open + empty)}</text><text x="44" y="55" text-anchor="middle" class="dp-mix__s">doors</text></svg>
+    <ul>${seg.map(([k, v, c]) => `<li><i style="background:${c}"></i>${escapeHtml(k)}<b>${v % 1 ? v.toFixed(1) : fmt(v)}</b></li>`).join("")}</ul></div>`;
+  const tile = (icon, val, label, pct, note) => {
+    const has = Number.isFinite(pct);
+    const v = has ? Math.round(pct * 100) : null;
+    return `<div class="dp-t${has ? "" : " dp-t--ctx"}" ${has ? `style="--h:${pdfHue(v)};--t:${pdfTint(v)}"` : ""}><span class="dp-t__i">${pdfIcon(icon)}</span><b>${escapeHtml(val)}</b><small>${escapeHtml(label)}</small>${has ? `<span class="dp-t__bar"><s style="width:${Math.max(4, v)}%"></s></span><em>${v >= 67 ? "Top third" : v >= 34 ? "Middle" : "Bottom third"} in ${escapeHtml(city)}</em>` : `<em>${escapeHtml(note || "context")}</em>`}</div>`;
+  };
+  const tiles = [
+    tile("store", fmt(open), "open shops in 300 m", sub.foot),
+    tile("target", riv.toFixed(1), "same-type rivals", sub.gap),
+    tile("link", pal.toFixed(1), "helpful neighbours", sub.pals),
+    tile("empty", `${Math.round((mp.vac || 0) * 100)}%`, "empty or closed", sub.health),
+    o.ped && o.ped[1] <= 250 ? tile("walk", fmt(o.ped[0]), `people/day · counter ${o.ped[1]} m`, Math.max(0, Math.min(1, Math.log(o.ped[0] / 1000) / Math.log(80)))) : "",
+    o.mv ? tile("trips", `${fmt(o.mv[1] / 1000)}k`, "daily visitors into district", mp.visPct, "") : "",
+    Number.isFinite(o.sec?.hinc) ? tile("wallet", `${fmt(o.sec.hinc / 1000)}k €`, "household income", sub.income) : "",
+    o.of != null ? tile("office", `${o.of || 0} · ${o.sc || 0}`, "offices · schools in 400 m", sub.daytime) : "",
+    o.ld ? tile("truck", o.ld[1] != null ? `${o.ld[1]} m` : "None", o.ld[0] ? `loading bay · ${o.ld[0]} in 100 m` : "nearest loading bay", null, "context · check on site") : "",
+    o.pk ? tile("parking", o.pk[1] != null ? `${o.pk[1]} m` : "None", o.pk[2] ? `public car park · ${fmt(o.pk[2])} spaces` : "nearest public car park", null, "context · not the store's own") : "",
+  ].join("");
+  return `<div class="dp">${donut}<div class="dp-tiles">${tiles}</div></div>`;
 }
 
 function listingHeroHtml(images, url) {
@@ -2486,7 +2526,7 @@ function showCatchment(lon, lat) {
       const feature = walk.type === "FeatureCollection" ? walk.features?.[0] : null;
       if (feature) map.getSource(MAP_SOURCES.walk)?.setData(walk);
       if (!feature) {
-        slot.innerHTML = `<p class="live-note">The 10-minute walk is unavailable right now.</p>${nearbyPlacesBlock(nearby)}`;
+        slot.innerHTML = nearbyPlacesBlock(nearby);
         return;
       }
       const finish = () => {
@@ -3605,15 +3645,19 @@ async function shortlistMapImage(rows) {
   const pad = mapPadding();
   const pts = rows.map((r) => r.coords).filter(Boolean);
   let restoreLayers = () => {};
+  let restoreRatio = false;
   try {
     if (pts.length === 1) map.jumpTo({ center: pts[0], zoom: 15, padding: pad });
     else if (pts.length) {
       const b = pts.reduce((acc, c) => acc.extend(c), new maplibregl.LngLatBounds(pts[0], pts[0]));
       map.fitBounds(b, { padding: { top: pad.top + 50, bottom: pad.bottom + 50, left: pad.left + 60, right: pad.right + 60 }, duration: 0, maxZoom: 16 });
     }
-    const hid = [MAP_LAYERS.listings].filter((id) => map.getLayer(id));
+    const hid = [MAP_LAYERS.listings, MAP_LAYERS.areasFill, MAP_LAYERS.areasLine, MAP_LAYERS.areaSelectedFill, MAP_LAYERS.areaSelectedHalo, MAP_LAYERS.areaSelected, MAP_LAYERS.walkFill, MAP_LAYERS.walkLine, MAP_LAYERS.places].filter((id) => map.getLayer(id));
+    const prevVis = hid.map((id) => map.getLayoutProperty(id, "visibility") || "visible");
     hid.forEach((id) => map.setLayoutProperty(id, "visibility", "none"));
-    restoreLayers = () => hid.forEach((id) => map.setLayoutProperty(id, "visibility", "visible"));
+    restoreLayers = () => hid.forEach((id, k) => map.setLayoutProperty(id, "visibility", prevVis[k]));
+    // print-grade raster: render the map at 3x device pixels for the snapshot
+    if (typeof map.setPixelRatio === "function") { map.setPixelRatio(3); restoreRatio = true; }
     await new Promise((res) => { let done = false; const fin = () => { if (!done) { done = true; res(); } }; map.once("idle", fin); setTimeout(fin, 5000); });
     const src = await new Promise((res) => { map.once("render", () => res(map.getCanvas())); map.triggerRepaint(); });
     const cw = src.clientWidth, ch = src.clientHeight, sx = src.width / cw;
@@ -3622,12 +3666,13 @@ async function shortlistMapImage(rows) {
     out.width = Math.round(w * sx); out.height = Math.round(h * sx);
     out.getContext("2d").drawImage(src, x0 * sx, y0 * sx, w * sx, h * sx, 0, 0, out.width, out.height);
     const pins = rows.map((r, i) => { if (!r.coords) return null; const q = map.project(r.coords); return { n: i + 1, x: ((q.x - x0) / w) * 100, y: ((q.y - y0) / h) * 100 }; }).filter(Boolean);
-    return { url: out.toDataURL("image/jpeg", 0.88), pins, ratio: h / w };
+    return { url: out.toDataURL("image/jpeg", 0.95), pins, ratio: h / w };
   } catch (err) {
     console.warn("map snapshot failed", err);
     return null;
   } finally {
     restoreLayers();
+    if (restoreRatio) map.setPixelRatio(window.devicePixelRatio || 1);
     map.jumpTo({ ...cam, padding: pad });
   }
 }
@@ -3695,6 +3740,15 @@ const PDF_ICONS = {
   clock: '<circle cx="12" cy="12" r="8"/><path d="M12 8v4l3 2"/>',
   walk: '<circle cx="13" cy="4.5" r="1.5"/><path d="M9 21l2-6 3 3v3M8 11l3-3 3 1 2 3M11 15l1-5"/>',
   people: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2.5-2-4.3-4-4.8"/>',
+  store: '<path d="M4 10v10h16V10M3 10l2-6h14l2 6zM9 20v-5h6v5"/>',
+  target: '<circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="4"/><circle cx="12" cy="12" r=".8"/>',
+  link: '<path d="M10 14a4 4 0 0 0 5.7 0l3-3a4 4 0 0 0-5.7-5.7l-1 1M14 10a4 4 0 0 0-5.7 0l-3 3a4 4 0 0 0 5.7 5.7l1-1"/>',
+  empty: '<rect x="4" y="5" width="16" height="14" rx="1.5"/><path d="M4 9h16M9 13h6"/>',
+  wallet: '<rect x="3" y="6" width="18" height="13" rx="2"/><path d="M3 10h18M16 14.5h2"/>',
+  office: '<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/>',
+  trips: '<path d="M4 17h4l3-10 3 10h6M17 14l3 3-3 3"/>',
+  truck: '<path d="M2 7h11v9H2zM13 10h4l3 3v3h-7"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+  parking: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
 };
 const pdfIcon = (k) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PDF_ICONS[k]}</svg>`;
 
@@ -3734,7 +3788,7 @@ function pdfPlaceHtml(r, i, ctx) {
       <div class="pp-rules">${rules.html ? `<h3 class="pp-h">${escapeHtml(ctx.tenantName)} requirements</h3><ul>${rules.html}</ul>` : `<h3 class="pp-h">Why it scores</h3><ul class="pp-why">${parts.map((q) => `<li><b>${escapeHtml(q.label)}</b><small>${escapeHtml(q.line || "")}</small></li>`).join("")}</ul>`}
         ${ctxLine.length ? `<p class="pp-ctx">${ctxLine.map(escapeHtml).join(" · ")} — context only, check on site</p>` : ""}</div>
     </div>
-    <footer class="pp-foot">${p.u ? `<a href="${escapeHtml(p.u)}">${escapeHtml(p.u)}</a>` : ""}<span>${escapeHtml(ctx.sources)}</span><span>${i + 2} / ${ctx.pages}</span></footer>
+    <footer class="pp-foot">${p.u ? `<a href="${escapeHtml(p.u)}">${escapeHtml(p.u)}</a>` : ""}<span>${escapeHtml(ctx.sources)}</span><span>${i + 3} / ${ctx.pages}</span></footer>
   </section>`;
 }
 
@@ -3772,7 +3826,7 @@ async function exportShortlist({ print = true } = {}) {
   const today = new Date().toLocaleDateString("en-GB", { day: "numeric", month: "long", year: "numeric" });
   const nList = state.listings.length;
   const ctx = {
-    stats: pdfCityStats(rows), maps, tenantName, tenantEval: !!state.tenantEval && !!tenantObj, pages: rows.length + 2,
+    stats: pdfCityStats(rows), maps, tenantName, tenantEval: !!state.tenantEval && !!tenantObj, pages: rows.length + 3,
     sources: `Based on ${formatNumber(nList)} listings (Idealista, deduplicated) · INE 2024 income atlas · Madrid pedestrian counters · Madrid & Barcelona premises censuses · OpenStreetMap`,
   };
   const pins = snap ? snap.pins.map((q) => `<span class="cv-pin" style="left:${q.x}%;top:${q.y}%">${q.n}</span>`).join("") : "";
@@ -3783,19 +3837,29 @@ async function exportShortlist({ print = true } = {}) {
   const kpi = (v, l) => `<div class="cv-k"><b>${v}</b><small>${l}</small></div>`;
   let sheet = document.getElementById("print-sheet");
   if (!sheet) { sheet = document.createElement("div"); sheet.id = "print-sheet"; document.body.appendChild(sheet); }
+  const ops = [...new Set(rows.map((r) => r.props.op))];
+  const opLabel = ops.length === 1 ? (ops[0] === "rent" ? "for rent" : "for sale") : "to rent or buy";
+  const prices = rows.map((r) => r.props.p).filter(Number.isFinite);
+  const priceRange = prices.length ? `${formatNumber(Math.min(...prices))}–${formatNumber(Math.max(...prices))} €${ops.length === 1 && ops[0] === "rent" ? "/mo" : ""}` : "—";
+  const stat = (v, l) => `<div class="cv-st"><b>${v}</b><small>${l}</small></div>`;
   sheet.innerHTML = `<section class="ps-page cv">
-    <div class="cv-band">
-      <div class="cv-brand">${PS_MARK}<span>Property Scanner</span><em>${escapeHtml(today)}</em></div>
-      <div class="cv-hero">${pdfTenantMark(tenantObj, tenantName, { big: true })}
-        <div><p class="cv-kicker">Location shortlist${tenantObj ? " · prepared for" : ""}</p><h1>${escapeHtml(tenantName || "Best places")}</h1><p class="cv-sub">${rows.length} ${rows.length === 1 ? "premises" : "premises"} in ${escapeHtml(cities)}, ranked on data${filters.length ? ` · filters: ${escapeHtml(filters.join(", "))}` : ""}</p></div></div>
-      <div class="cv-kpis">${kpi(formatNumber(nList), "listings analysed")}${kpi(rows.length, "on this shortlist")}${kpi(best, "best score / 100")}${passAll != null ? kpi(`${passAll}/${rows.length}`, "no failed rule") : kpi("5", "open data sources")}</div>
+    <header class="cv-top"><span class="cv-brand">${PS_MARK}<span>Property Scanner</span></span><span>Retail site selection</span></header>
+    <div class="cv-main">
+      <div class="cv-logo">${pdfTenantMark(tenantObj, tenantName, { big: true })}</div>
+      <p class="cv-kicker">Location report · ${escapeHtml(today)}</p>
+      <h1>Site shortlist<span>${escapeHtml(tenantName || "Best places")} · ${escapeHtml(cities)}</span></h1>
+      <i class="cv-rule"></i>
+      <p class="cv-sub">${rows.length} commercial premises ${opLabel}, selected from ${formatNumber(nList)} listings and ranked on footfall, competition, neighbours, spending power and price.${filters.length ? ` Filters: ${escapeHtml(filters.join(", "))}.` : ""}</p>
     </div>
-    <div class="cv-body">
-      ${snap ? `<div class="cv-map" style="aspect-ratio:${Math.max(1.3, 1 / snap.ratio).toFixed(3)}"><img src="${snap.url}" alt="Map of the shortlisted places">${pins}</div>` : ""}
-      <ol class="cv-list">${list}</ol>
-      <div class="cv-legend"><span>Score</span><i></i><small>0 weak</small><small>100 strong</small></div>
-    </div>
-    <footer class="pp-foot"><span></span><span>${escapeHtml(ctx.sources)}</span><span>1 / ${ctx.pages}</span></footer>
+    <div class="cv-stats">${stat(formatNumber(nList), "Listings analysed")}${stat(rows.length, "Shortlisted")}${stat(best, "Top score / 100")}${passAll != null ? stat(`${passAll}/${rows.length}`, "Pass all rules") : (ops.length === 1 ? stat(priceRange, "Price range") : stat(`${rows.filter((r) => r.props.op === "rent").length} · ${rows.filter((r) => r.props.op !== "rent").length}`, "To rent · to buy"))}</div>
+    <footer class="cv-foot"><span>Prepared ${escapeHtml(today)}</span><span>Sources: Idealista · INE · OpenStreetMap · municipal open data</span><span>Confidential</span></footer>
+  </section>
+  <section class="ps-page ov">
+    <header class="pp-head"><span class="pp-kicker">Overview</span><h2>The shortlist at a glance</h2></header>
+    ${snap ? `<div class="cv-map" style="aspect-ratio:${Math.max(1.3, 1 / snap.ratio).toFixed(3)}"><img src="${snap.url}" alt="Map of the shortlisted places">${pins}</div>` : ""}
+    <ol class="cv-list">${list}</ol>
+    <div class="cv-legend"><span>Score</span><i></i><small>0 weak</small><small>100 strong</small></div>
+    <footer class="pp-foot"><span></span><span>${escapeHtml(ctx.sources)}</span><span>2 / ${ctx.pages}</span></footer>
   </section>${rows.map((r, i) => pdfPlaceHtml(r, i, ctx)).join("")}${pdfCompareHtml(rows, ctx)}`;
   renderPdfBar();
   await Promise.all([...sheet.querySelectorAll("img")].map((im) => (im.complete ? null : new Promise((res) => { im.onload = im.onerror = res; setTimeout(res, 6000); }))));

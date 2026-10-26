@@ -149,6 +149,7 @@
       });
       const odv = group.map((f) => f.properties.od || null);
       const pInc = pctFn(odv.map((o) => o?.sec?.hinc).filter(Number.isFinite));
+      const pVis = pctFn(odv.map((o) => o?.mv?.[1]).filter(Number.isFinite));
       const pDay = pctFn(odv.filter(Boolean).map((o) => (o.of || 0) + 3 * (o.sc || 0)));
       const pOpen = pctFn(raw.map((r) => r.open)), pComp = pctFn(raw.map((r) => r.comp)), pPals = pctFn(raw.map((r) => r.pals)), pVac = pctFn(raw.map((r) => r.vac));
       const prices = priceResiduals(group);
@@ -165,12 +166,15 @@
         // a real pedestrian counter close by outweighs the shop-count estimate: blend 50/50
         const ped = od.ped && od.ped[1] <= 250 ? od.ped : null;
         if (ped) footV = 0.5 * footV + 0.5 * Math.max(0, Math.min(1, Math.log(ped[0] / 1000) / Math.log(80)));
+        // MITMA daily trips into the district from elsewhere: coarse (district-wide), so only a modest 15% nudge
+        const vis = Number.isFinite(od.mv?.[1]) ? od.mv : null;
+        if (vis) footV = 0.85 * footV + 0.15 * pVis(vis[1]);
         const sig = profile.signals || {};
         const mw = { foot: sig.street ?? 0.6, pals: sig.pals ?? 0.4, gap: sig.gap ?? 0.6, health: 0.35 };
         const mv = { foot: footV, pals: pPals(r.pals), gap: 1 - pComp(r.comp), health: 1 - pVac(r.vac) };
         if (Number.isFinite(od.sec?.hinc)) { mw.income = ["cafe", "bakery", "beauty", "fashion"].includes(c) ? 0.25 : 0.15; mv.income = pInc(od.sec.hinc); }
         if (p.od && od.of != null) { mw.daytime = ["cafe", "bakery", "food"].includes(c) ? 0.3 : 0.12; mv.daytime = pDay((od.of || 0) + 3 * (od.sc || 0)); }
-        const extra = [ped ? `counter on ${ped[2]} (${ped[1]} m): ${Math.round(ped[0]).toLocaleString("es-ES")} people/day` : "", Number.isFinite(od.sec?.hinc) ? `household income ${Math.round(od.sec.hinc).toLocaleString("es-ES")} €/yr` : "", p.od && od.of != null ? `${od.of || 0} offices, ${od.sc || 0} schools within 400 m` : ""].filter(Boolean);
+        const extra = [ped ? `counter on ${ped[2]} (${ped[1]} m): ${Math.round(ped[0]).toLocaleString("es-ES")} people/day` : "", Number.isFinite(od.sec?.hinc) ? `household income ${Math.round(od.sec.hinc).toLocaleString("es-ES")} €/yr` : "", p.od && od.of != null ? `${od.of || 0} offices, ${od.sc || 0} schools within 400 m` : "", vis ? `${Math.round(vis[1]).toLocaleString("es-ES")} daily visitors into the district (MITMA)` : ""].filter(Boolean);
         const mSum = mw.foot + mw.pals + mw.gap + mw.health;
         const microV = Object.keys(mw).reduce((s, k) => s + mw[k] * mv[k], 0) / mSum;
         const unit = unitFit(p, c, band);

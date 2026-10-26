@@ -1794,7 +1794,7 @@ function areaCalcHtml(a) {
   return `<ul class="cx-list cx-list--sub">${CX_HEAD}${rows}${steps.join("")}</ul>`;
 }
 
-const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m"], pals: ["Helpful neighbours", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"], income: ["Local spending power", "household income in this census section (INE)"], daytime: ["Daytime crowd", "offices and schools within 400 m (OpenStreetMap)"] };
+const MICRO_LABELS = { foot: ["Passing trade", "open shops in the 300 m, blended with nearby pedestrian counters and MITMA daily visitors into the district"], pals: ["Helpful neighbours", "shops that share customers"], gap: ["Few same-type rivals", "fewer rivals scores higher"], health: ["Few empty units", "share of closed premises"], income: ["Local spending power", "household income in this census section (INE)"], daytime: ["Daytime crowd", "offices and schools within 400 m (OpenStreetMap)"] };
 
 /** Exact, step-by-step calculation of this listing's score and rank — the same numbers score.js ranked with. */
 function scoreCalcHtml(props, areaProps) {
@@ -1931,7 +1931,8 @@ function listingOpenDataHtml(props) {
   const fmt = (n) => formatNumber(Math.round(n));
   if (o.ped) rows.push(["Pedestrians", `${fmt(o.ped[0])} people/day`, `Madrid counter on ${o.ped[2]}, ${o.ped[1]} m away${o.ped[1] > 250 ? " (too far to score)" : ""}`]);
   if (o.pk) rows.push(["Public car parks", o.pk[0] ? `${o.pk[0]} within 300 m` : "None within 300 m", o.pk[0] ? `nearest ${o.pk[1]} m${o.pk[2] ? ` · ${fmt(o.pk[2])} spaces` : ""}` : "OpenStreetMap"]);
-  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", props.m === "Madrid" ? "Madrid city loading zones + OpenStreetMap" : "OpenStreetMap only (Barcelona data unavailable)"]);
+  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", `${o.ld[0] ? `${o.ld[0]} within 100 m · ` : ""}${props.m === "Madrid" ? "Madrid city loading zones" : "Barcelona city loading zones (Open Data BCN)"} + OpenStreetMap · context only, check on site`]);
+  if (o.mv) rows.push(["Daily visitors into district", `${fmt(o.mv[1])} trips/weekday`, `${o.mv[2] != null ? `${fmt(o.mv[2])} on Saturday · ` : ""}from other districts${o.mv[3] != null ? ` · peak ${o.mv[3]}:00` : ""} · MITMA mobility, June 2025 (district ${o.mv[0].slice(-2)})`]);
   rows.push(["Daytime crowd", `${o.of || 0} offices · ${o.sc || 0} schools`, "within 400 m, OpenStreetMap"]);
   const s = o.sec;
   if (s) rows.push(["Census section", `${s.hinc ? `${fmt(s.hinc)} €/household` : "—"}`, [s.hh ? `${String(s.hh).replace(".", ",")} people/home` : "", s.age ? `average age ${String(s.age).replace(".", ",")}` : "", s.p65 != null ? `${String(s.p65).replace(".", ",")}% over 65` : "", `INE ${s.yr || ""}`].filter(Boolean).join(" · ")]);

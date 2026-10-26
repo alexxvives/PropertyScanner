@@ -4,6 +4,7 @@ Sources (downloaded into data/raw/r19/, which is gitignored):
   ped0.csv        Madrid pedestrian counters, datos.madrid.es 300321-0 (hourly, Jan-Jun 2024)
   osm_pts.json    OpenStreetMap (Geofabrik madrid + cataluna extracts): public car parks, loading docks,
                   schools, offices; made by etl/osm_extract.py
+  bcn_cd.csv      Barcelona loading bays, Open Data BCN zones-carrega-descarrega
   mad_cd.csv      Madrid reserved loading bays (carga y descarga), datos.madrid.es 208072-0
   ine_31097_city.csv / ine_30896_city.csv   INE household income atlas by census section (Madrid / Barcelona)
   ine_31105_city.csv / ine_30904_city.csv   INE atlas demographic indicators by census section
@@ -19,6 +20,7 @@ Per listing:
 from __future__ import annotations
 
 import csv
+import io
 import gzip
 import json
 import math
@@ -124,6 +126,39 @@ def sections():
     return STRtree(geoms), geoms, codes
 
 
+def mitma_districts():
+    """MITMA daily district trips (streamed + aggregated by etl/mitma_stream.py into mitma/agg_YYYYMMDD.json).
+    Returns per district: [weekday visitors from other districts, Saturday visitors, peak hour weekday]."""
+    d = RAW / "mitma"
+    aggs = sorted(d.glob("agg_*.json")) if d.exists() else []
+    if not aggs or not (d / "zonificacion_distritos.shp").exists():
+        return None
+    import datetime
+    import shapefile
+    from shapely.geometry import shape
+    from shapely.strtree import STRtree
+    wd, we = defaultdict(list), defaultdict(list)
+    peak = {}
+    for f in aggs:
+        a = json.loads(f.read_text())
+        sat = datetime.date(int(a["day"][:4]), int(a["day"][4:6]), int(a["day"][6:])).weekday() >= 5
+        for k, v in a["ext"].items():
+            (we if sat else wd)[k].append(v)
+            if not sat:
+                h = a["hr"][k]
+                peak[k] = h.index(max(h))
+    vis = {k: [round(sum(wd[k]) / len(wd[k])) if wd[k] else None, round(sum(we[k]) / len(we[k])) if we[k] else None, peak.get(k)] for k in set(wd) | set(we)}
+    r = shapefile.Reader(str(d / "zonificacion_distritos.shp"))
+    fid = [f[0] for f in r.fields[1:]].index("ID")
+    geoms, codes = [], []
+    for sr in r.iterShapeRecords():
+        c = str(sr.record[fid])
+        if c in vis:
+            geoms.append(shape(sr.shape.__geo_interface__))
+            codes.append(c)
+    return STRtree(geoms), geoms, codes, vis
+
+
 def main():
     from pyproj import Transformer
     from shapely.geometry import Point
@@ -141,10 +176,25 @@ def main():
                     by["load"].append(("load", float(r["Longitud"]), float(r["Latitud"]), None))
                 except (ValueError, KeyError):
                     pass
-    grids = {k: grid_of(v) for k, v in by.items()}
+    if (RAW / "bcn_cd.csv").exists():  # Open Data BCN zones-carrega-descarrega (UTF-16 CSV)
+        raw = (RAW / "bcn_cd.csv").read_bytes()
+        txt = raw.decode("utf-16") if raw[:2] in (b"\xff\xfe", b"\xfe\xff") else raw.decode("utf-8-sig")
+        seen = set()
+        for r in csv.DictReader(io.StringIO(txt)):
+            try:
+                k = (r["geo_epgs_4326_lon"], r["geo_epgs_4326_lat"])
+                if k in seen:
+                    continue
+                seen.add(k)
+                by["load"].append(("load", float(k[0]), float(k[1]), None))
+                by["load_bcn"].append(1)
+            except (ValueError, KeyError):
+                pass
+    grids = {k: grid_of(v) for k, v in by.items() if k != "load_bcn"}
     ine = ine_rows("ine_31097_city.csv", "ine_30896_city.csv", "ine_31105_city.csv", "ine_30904_city.csv")
     sec = sections()
     to_utm = Transformer.from_crs(4326, 25830, always_xy=True)
+    mitma = mitma_districts()
     out, stats = {}, defaultdict(int)
     for f in listings:
         p = f["properties"]
@@ -175,6 +225,13 @@ def main():
                               "p65": g("Porcentaje de población de 65 y más años"), "one": g("Porcentaje de hogares unipersonales"),
                               "pop": g("Población"), "yr": v.get("Renta neta media por persona", (None,))[0]}
                 stats["sec"] += 1
+        if mitma:
+            tree, geoms, codes, vis = mitma
+            pt = Point(*to_utm.transform(lon, lat))
+            hit = next((codes[i] for i in tree.query(pt) if geoms[i].covers(pt)), None)
+            if hit in vis:
+                row["mv"] = [hit] + vis[hit]
+                stats["mitma"] += 1
         out[p["id"]] = row
     meta = {"counters": len(ped), "osm": {k: len(v) for k, v in by.items()}, "joined": dict(stats), "listings": len(listings)}
     (BUILD / "opendata.json.gz").write_bytes(gzip.compress(json.dumps({"meta": meta, "rows": out}, ensure_ascii=False, separators=(",", ":")).encode(), 9))

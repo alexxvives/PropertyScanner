@@ -331,7 +331,7 @@ const MAP_SCANS = {
   loading: (p) => {
     const ld = p.od?.ld;
     if (!ld) return null;
-    return { result: null, shown: ld[1] != null ? `unknown — street loading bay ${ld[1]} m away` : p.m === "Madrid" ? "unknown — no street loading bay within 300 m" : "unknown — no loading-bay data for Barcelona" };
+    return { result: null, shown: ld[1] != null ? `unknown — street loading bay ${ld[1]} m away` : "unknown — no street loading bay within 300 m" };
   },
 };
 

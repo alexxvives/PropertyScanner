@@ -848,16 +848,40 @@ function refreshTenantEval() {
 }
 
 function tenantOptionHtml(t, on) {
-  const logo = t ? `<span class="tlogo" style="--tc:${t.color}">${escapeHtml(t.initials)}</span>` : `<span class="tlogo tlogo--any">∗</span>`;
+  const lf = t && TENANT_LOGOS[t.id];
+  const logo = lf ? `<span class="tlogo tlogo--img"><img src="logos/${lf}" alt=""></span>` : t ? `<span class="tlogo" style="--tc:${t.color}">${escapeHtml(t.initials)}</span>` : `<span class="tlogo tlogo--any">∗</span>`;
   const anyVerified = t && [...t.hard, ...t.soft].some((x) => x.verified);
   return `${logo}<span class="tpick__txt"><b>${escapeHtml(t ? t.name : "Any tenant")}</b><small>${escapeHtml(t ? t.short : "Score by business type")}${t && !anyVerified ? " · press only" : ""}</small></span>`;
+}
+/* Round 23: tenant brief as chips (no paragraph) */
+const BRIEF_ICONS = {
+  type: '<path d="M4 10v10h16V10M3 10l2-6h14l2 6z"/>',
+  size: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/>',
+  format: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  parking: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
+  franchise: '<path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v9H5z"/>',
+  frontage: '<path d="M3 20h18M5 20V8h14v12M3 8h18"/>',
+  ceiling: '<path d="M12 4v16M8 8l4-4 4 4M8 16l4 4 4-4"/>',
+  catchment: '<circle cx="9" cy="8" r="3"/><path d="M3 20c0-3 3-5 6-5s6 2 6 5M16 11a3 3 0 1 0 0-6M21 20c0-2.5-2-4.3-4-4.8"/>',
+};
+const briefIcon = (k) => `<svg viewBox="0 0 24 24" width="14" height="14" fill="none" stroke="currentColor" stroke-width="1.9" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${BRIEF_ICONS[k]}</svg>`;
+function tenantBriefHtml(t, bizLabel) {
+  const b = (typeof TENANT_BRIEFS !== "undefined" && TENANT_BRIEFS[t.id]) || {};
+  const chip = (k, label, val) => (val ? `<span class="tb-chip" title="${escapeHtml(label)}">${briefIcon(k)}<small>${escapeHtml(label)}</small><b>${escapeHtml(val)}</b></span>` : "");
+  const ver = { official: ["Verified", "Official company source", "tb-ver--ok"], partial: ["Partly verified", "Official source plus press", "tb-ver--mid"], press: ["Unverified", "Press reports only, no official sheet", "tb-ver--no"] }[b.verified || "press"];
+  const src = t.sources.map((s, i) => `<a class="tb-src" href="${escapeHtml(s.url)}" target="_blank" rel="noopener" title="${escapeHtml(s.label)}" aria-label="Source ${i + 1}: ${escapeHtml(s.label)}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>${i + 1}</a>`).join("");
+  return `<div class="tbrief">
+    <div class="tbrief__top"><span class="tb-type">${briefIcon("type")}${escapeHtml(b.type || bizLabel)}</span><span class="tb-biz">${escapeHtml(bizLabel)}</span><span class="tb-ver ${ver[2]}" title="${escapeHtml(ver[1])}">${b.verified === "official" ? "✓" : b.verified === "partial" ? "◐" : "!"} ${ver[0]}</span></div>
+    <div class="tbrief__chips">${chip("size", "Size", b.size)}${(b.format || []).length ? `<span class="tb-chip tb-chip--wide">${briefIcon("format")}<small>Format</small><b>${(b.format || []).map(escapeHtml).join(" · ")}</b></span>` : ""}${chip("parking", "Parking", b.parking)}${chip("franchise", "Franchise", b.franchise)}${chip("frontage", "Frontage", b.frontage)}${chip("ceiling", "Ceiling", b.ceiling)}${chip("catchment", "Catchment", b.catchment)}</div>
+    <div class="tbrief__src"><small>Sources</small>${src}</div>
+  </div>`;
 }
 function renderTenantPicker() {
   const val = document.getElementById("tenant-value");
   const menu = document.getElementById("tenant-menu");
   if (!val || !menu) return;
   val.innerHTML = tenantOptionHtml(state.tenant, true);
-  menu.innerHTML = [null, ...Object.values(TENANTS)].map((t) => {
+  menu.innerHTML = `<input type="search" class="csel__q" data-tenant-q placeholder="Search tenants" aria-label="Search tenants" autocomplete="off">` + [null, ...Object.values(TENANTS)].map((t) => {
     const id = t ? t.id : "";
     const on = (state.tenant?.id || "") === id;
     return `<button type="button" role="option" data-tenant="${id}" aria-selected="${on}" class="tpick__opt${on ? " is-on" : ""}">${tenantOptionHtml(t)}</button>`;
@@ -871,8 +895,8 @@ function setTenant(id) {
   if (state.tenant) {
     if (state.query?.id !== state.tenant.concept) document.querySelector(`#business-menu [data-value="${state.tenant.concept}"]`)?.click();
     const label = document.querySelector(`#business-menu [data-value="${state.tenant.concept}"]`)?.textContent || state.tenant.concept;
-    if (note) { note.hidden = false; note.innerHTML = `${escapeHtml(state.tenant.blurb)} <a href="${state.tenant.sources[0].url}" target="_blank" rel="noopener">Source</a>`; }
-    if (implied) { implied.hidden = false; implied.innerHTML = `Business type: <b>${escapeHtml(label)}</b> <span>· set by ${escapeHtml(state.tenant.name)}</span>`; }
+    if (note) { note.hidden = false; note.innerHTML = tenantBriefHtml(state.tenant, label); }
+    if (implied) implied.hidden = true;
     if (bizPicker) bizPicker.hidden = true;
   } else {
     if (note) note.hidden = true;
@@ -902,8 +926,34 @@ document.addEventListener("click", (event) => {
 });
 document.addEventListener("keydown", (event) => {
   const menu = document.getElementById("tenant-menu");
-  if (event.key === "Escape" && menu && !menu.hidden) { menu.hidden = true; document.getElementById("tenant-btn")?.focus(); }
+  if (event.key === "Escape" && menu && !menu.hidden) { menu.hidden = true; document.getElementById("tenant-btn")?.setAttribute("aria-expanded", "false"); document.getElementById("tenant-btn")?.focus(); return; }
+  if (menu && !menu.hidden && menu.contains(document.activeElement) || (event.target.id === "tenant-btn" && event.key === "ArrowDown")) listboxKeys(event, menu, () => { menu.hidden = false; document.getElementById("tenant-btn").setAttribute("aria-expanded", "true"); });
 });
+document.addEventListener("input", (event) => {
+  const q = event.target.closest("[data-tenant-q]");
+  if (!q) return;
+  const v = q.value.trim().toLowerCase();
+  q.parentElement.querySelectorAll("[data-tenant]").forEach((o) => { o.hidden = !!v && !o.textContent.toLowerCase().includes(v); });
+});
+document.addEventListener("click", (event) => {
+  if (event.target.closest("#tenant-btn")) setTimeout(() => { const m = document.getElementById("tenant-menu"); if (m && !m.hidden) m.querySelector("[data-tenant-q]")?.focus(); }, 0);
+});
+/** Arrow / Home / End / Enter navigation inside any custom listbox. */
+function listboxKeys(event, menu, open) {
+  const opts = [...menu.querySelectorAll('[role="option"]')].filter((o) => !o.hidden);
+  if (!opts.length) return;
+  const i = opts.indexOf(document.activeElement);
+  let n = null;
+  if (event.key === "ArrowDown") n = i < 0 ? 0 : Math.min(opts.length - 1, i + 1);
+  else if (event.key === "ArrowUp") n = i <= 0 ? (i < 0 ? opts.length - 1 : -1) : i - 1;
+  else if (event.key === "Home") n = 0;
+  else if (event.key === "End") n = opts.length - 1;
+  else return;
+  event.preventDefault();
+  if (menu.hidden && open) open();
+  if (n === -1) { const q = menu.querySelector("input"); (q || opts[0]).focus(); return; }
+  opts[n].focus();
+}
 document.addEventListener("DOMContentLoaded", renderTenantPicker);
 if (document.readyState !== "loading") renderTenantPicker();
 
@@ -3456,6 +3506,44 @@ document.addEventListener("pointerover", (event) => {
   apply();
 })();
 
+/* ---- Round 23: phone filters bottom sheet, map/list toggle, collapsible neighbourhood ranking ---- */
+(function mobileAndPanels() {
+  const phone = window.matchMedia("(max-width: 760px)");
+  const sheet = document.getElementById("fsheet");
+  const body = document.getElementById("fsheet-body");
+  const filters = document.getElementById("map-heatmap-toolbar");
+  const home = filters?.parentElement;
+  const panel = document.querySelector(".ranking-panel");
+  const openSheet = () => { if (!sheet || !filters) return; body.appendChild(filters); sheet.hidden = false; document.body.classList.add("fsheet-open"); sheet.querySelector(".fsheet__x")?.focus(); syncGo(); };
+  const closeSheet = () => { if (!sheet || sheet.hidden) return; sheet.hidden = true; document.body.classList.remove("fsheet-open"); if (home && filters.parentElement !== home) home.insertBefore(filters, home.firstChild); document.getElementById("m-filters")?.focus(); };
+  const syncGo = () => { const t = filters?.querySelector("[data-total-n]")?.textContent; const go = sheet?.querySelector(".fsheet__go"); if (go && t && t !== "…") go.textContent = `Show ${t.replace(/ (match|in view)$/, "")}`; };
+  document.getElementById("m-filters")?.addEventListener("click", openSheet);
+  sheet?.addEventListener("click", (e) => { if (e.target.closest("[data-fsheet-close]")) closeSheet(); });
+  document.addEventListener("keydown", (e) => { if (e.key === "Escape" && sheet && !sheet.hidden && !e.target.closest(".csel")) closeSheet(); });
+  new MutationObserver(() => {
+    syncGo();
+    const n = typeof activeFilterCount === "function" ? activeFilterCount() : 0;
+    const badge = document.getElementById("m-filters-n");
+    if (badge) { badge.hidden = !n; badge.textContent = n; }
+  }).observe(filters || document.body, { childList: true, subtree: true, characterData: true });
+  phone.addEventListener("change", () => { if (!phone.matches) closeSheet(); });
+  const mv = document.getElementById("mview-btn");
+  mv?.addEventListener("click", () => {
+    const list = document.body.dataset.mview !== "list";
+    document.body.dataset.mview = list ? "list" : "map";
+    panel?.classList.toggle("is-expanded", list);
+    mv.setAttribute("aria-pressed", String(list));
+    mv.querySelector("[data-l]").textContent = list ? "Map view" : "List view";
+  });
+  // Neighbourhood ranking: collapsed by default on short screens (the map already shows the same colours).
+  const tog = document.getElementById("area-toggle");
+  const sec = document.querySelector(".area-rank");
+  const saved = localStorage.getItem("ps-areas-open");
+  const setOpen = (open) => { sec?.classList.toggle("is-collapsed", !open); tog?.setAttribute("aria-expanded", String(open)); };
+  setOpen(saved != null ? saved === "1" : window.innerHeight >= 860);
+  tog?.addEventListener("click", () => { const open = sec.classList.contains("is-collapsed"); setOpen(open); localStorage.setItem("ps-areas-open", open ? "1" : "0"); });
+})();
+
 /* ---- Image skeletons: fade images in once loaded ---- */
 document.addEventListener("load", (event) => {
   const img = event.target;
@@ -3578,16 +3666,60 @@ function updateChipCounts() {
   const t = bar.querySelector("[data-total-n]");
   if (t) t.textContent = activeFilterCount() ? `${placesWord(total)} match` : `${placesWord(total)} in view`;
   const noPrice = pool.filter((p) => { for (const d of CHIP_DEFS) if (state.chips.has(d.id) && !chipPass(d, p)) return false; return sizePass(p); });
-  bar.querySelectorAll("[data-fprice] option").forEach((o) => { const n = noPrice.filter((p) => pricePass(p, Number(o.value))).length; o.textContent = `${PRICE_OPTS.find((x) => x[0] === Number(o.value))[1]} (${formatNumber(n)})`; });
+  bar.querySelectorAll('[data-csel="fprice"] [data-v]').forEach((o) => { const n = noPrice.filter((p) => pricePass(p, Number(o.dataset.v))).length; o.querySelector("em").textContent = formatNumber(n); });
   const noSize = pool.filter((p) => { for (const d of CHIP_DEFS) if (state.chips.has(d.id) && !chipPass(d, p)) return false; return pricePass(p); });
-  bar.querySelectorAll("[data-fsize] option").forEach((o) => { const n = noSize.filter((p) => sizePass(p, o.value)).length; o.textContent = `${SIZE_OPTS.find((x) => x[0] === o.value)[1]} (${formatNumber(n)})`; });
+  bar.querySelectorAll('[data-csel="fsize"] [data-v]').forEach((o) => { const n = noSize.filter((p) => sizePass(p, o.dataset.v)).length; o.querySelector("em").textContent = formatNumber(n); });
+}
+/* Round 23: custom dropdown (button + listbox), keyboard accessible, searchable when long */
+function cselHtml(kind, label, opts, value, on, glyph, search = opts.length > 8) {
+  const cur = opts.find((o) => o[0] === value) || opts[0];
+  const id = `csel-${kind}`;
+  return `<div class="csel${on ? " is-on" : ""}" data-csel="${kind}">
+    <button type="button" class="csel__btn" aria-haspopup="listbox" aria-expanded="false" aria-controls="${id}"><span class="csel__g" aria-hidden="true">${glyph}</span><span class="csel__lab">${escapeHtml(label)}</span><b>${escapeHtml(cur[1])}</b><svg class="csel__chev" viewBox="0 0 24 24" aria-hidden="true"><path d="M6 9l6 6 6-6" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg></button>
+    <div class="csel__menu" id="${id}" role="listbox" aria-label="${escapeHtml(label)}" hidden>${search ? `<input type="search" class="csel__q" placeholder="Search" aria-label="Search ${escapeHtml(label)}" autocomplete="off">` : ""}${opts.map(([v, l]) => `<button type="button" role="option" data-v="${escapeHtml(v)}" aria-selected="${v === cur[0]}" class="${v === cur[0] ? "is-on" : ""}"><span>${escapeHtml(l)}</span><em></em></button>`).join("")}</div>
+  </div>`;
+}
+function closeCsels(except) {
+  document.querySelectorAll(".csel").forEach((c) => { if (c === except) return; c.querySelector(".csel__menu").hidden = true; c.querySelector(".csel__btn").setAttribute("aria-expanded", "false"); c.classList.remove("is-open"); });
+}
+document.addEventListener("click", (event) => {
+  const c = event.target.closest(".csel");
+  if (!c) { closeCsels(); return; }
+  const menu = c.querySelector(".csel__menu"), btn = c.querySelector(".csel__btn");
+  const opt = event.target.closest("[data-v]");
+  if (opt) { closeCsels(); btn.focus(); cselPick(c.dataset.csel, opt.dataset.v); return; }
+  if (btn.contains(event.target)) {
+    const open = menu.hidden;
+    closeCsels(c);
+    menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); c.classList.toggle("is-open", open);
+    if (open) (menu.querySelector("input") || menu.querySelector('[aria-selected="true"]'))?.focus();
+  }
+});
+document.addEventListener("keydown", (event) => {
+  const c = event.target.closest?.(".csel");
+  if (!c) return;
+  const menu = c.querySelector(".csel__menu"), btn = c.querySelector(".csel__btn");
+  if (event.key === "Escape") { closeCsels(); btn.focus(); return; }
+  listboxKeys(event, menu, () => { closeCsels(c); menu.hidden = false; btn.setAttribute("aria-expanded", "true"); c.classList.add("is-open"); });
+});
+document.addEventListener("input", (event) => {
+  const q = event.target.closest(".csel__q");
+  if (!q || !q.closest(".csel")) return;
+  const v = q.value.trim().toLowerCase();
+  q.parentElement.querySelectorAll("[data-v]").forEach((o) => { o.hidden = !!v && !o.textContent.toLowerCase().includes(v); });
+});
+function cselPick(kind, v) {
+  if (kind === "fprice") state.maxPrice = Number(v);
+  else if (kind === "fsize") state.sizeRange = v;
+  else if (kind === "fheat") { state.heatmap = v; if (state.areas) paintScores(); mountMapToolbar(); return; }
+  applyListingFilters();
 }
 function chipBarHtml() {
   const chips = CHIP_DEFS.map((d) => `<button type="button" class="fchip${state.chips.has(d.id) ? " is-on" : ""}" data-chip="${d.id}" aria-pressed="${state.chips.has(d.id)}" title="${escapeHtml(d.tip)}"><span aria-hidden="true">${d.icon}</span>${escapeHtml(d.label)}<em data-chip-n="${d.id}">…</em></button>`).join("");
-  const price = `<label class="fsel${state.maxPrice ? " is-on" : ""}"><span>Max price</span><select data-fprice>${PRICE_OPTS.map(([v, l]) => `<option value="${v}"${state.maxPrice === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
-  const size = `<label class="fsel${state.sizeRange !== "any" ? " is-on" : ""}"><span>Size</span><select data-fsize>${SIZE_OPTS.map(([v, l]) => `<option value="${v}"${state.sizeRange === v ? " selected" : ""}>${l}</option>`).join("")}</select></label>`;
+  const price = cselHtml("fprice", "Max price", PRICE_OPTS.map(([v, l]) => [String(v), l]), String(state.maxPrice), !!state.maxPrice, "€");
+  const size = cselHtml("fsize", "Size", SIZE_OPTS, state.sizeRange, state.sizeRange !== "any", "m²");
   const heatIds = ["fit", ...FILTER_GROUPS.flatMap((g) => g[2])].filter((id) => HEATMAPS[id]);
-  const heat = `<label class="fsel fsel--heat"><span>Colour map</span><select data-fheat>${heatIds.map((id) => `<option value="${id}"${state.heatmap === id ? " selected" : ""}>${id === "fit" ? "Best fit" : escapeHtml(HEATMAPS[id].label)}</option>`).join("")}</select></label>`;
+  const heat = cselHtml("fheat", "Colour map", heatIds.map((id) => [id, id === "fit" ? "Best fit" : HEATMAPS[id].label]), state.heatmap, false, "◐", true);
   const n = activeFilterCount();
   return `<div class="chipbar" role="group" aria-label="Filter places"><div class="chipbar__chips">${chips}${price}${size}</div><div class="chipbar__foot"><b data-total-n>…</b>${n ? `<button type="button" class="chip-reset" data-chip-reset>Clear ${n}</button>` : ""}${heat}</div></div>`;
 }

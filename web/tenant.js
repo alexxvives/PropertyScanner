@@ -447,3 +447,19 @@ function tenantChecksHtml(tenant, ev, listingId) {
     <ul class="tenant-soft">${soft}</ul>
   </section>`;
 }
+
+/* Round 23: structured tenant brief shown as chips (from each blurb + its sources).
+   verified: "official" = chain's own published page/PDF; "partial" = official + press; "press" = press/inference only. */
+const TENANT_BRIEFS = {
+  aldi: { type: "Discount supermarket", size: "1,000–2,000 m²", format: ["City centre", "Mall / retail park"], parking: "~80", frontage: "20–30 m", catchment: "20k+ people", verified: "partial" },
+  lidl: { type: "Discount supermarket", size: "1,100–1,800 m²", format: ["City centre", "Plot + parking"], parking: "72–120", verified: "partial" },
+  mercadona: { type: "Supermarket", size: "~1,740 m² sales", format: ["Plot + parking", "Car access"], parking: "Needed", verified: "press" },
+  basicfit: { type: "Budget gym", size: "800–2,500 m²", format: ["City centre", "Near transport"], parking: "Not needed", verified: "official" },
+  vivagym: { type: "Budget gym", size: "1,200–2,000 m²", format: ["City centre"], verified: "press" },
+  fiveguys: { type: "Fast-casual burgers", size: "186–300 m²", format: ["Corner / end-cap"], parking: "35", frontage: "≥ 9.8 m", ceiling: "≥ 3.5 m", verified: "official" },
+  decathloncity: { type: "Sports retail · city format", size: "470–1,000 m²", format: ["City centre"], verified: "press" },
+  dia: { type: "Proximity supermarket", size: "750–1,200 m²", format: ["City centre", "Plot + parking"], parking: "80 (plot)", franchise: "200–500 m²", verified: "official" },
+  carrefourexpress: { type: "Convenience supermarket", size: "100–400 m²", format: ["City centre", "Towns 3k+"], franchise: "From 120 m²", verified: "official" },
+  burgerking: { type: "Fast food", size: "From 225 m²", format: ["High street", "Mall", "Free-standing"], frontage: "≥ 6 m", catchment: "30k+ people", franchise: "Franchise", verified: "official" },
+};
+const TENANT_LOGOS = { aldi: "aldi.png", lidl: "lidl.svg", mercadona: "mercadona.svg", vivagym: "vivagym.png", basicfit: "basicfit.png", fiveguys: "fiveguys.svg", decathloncity: "decathlon.svg", dia: "dia.svg", burgerking: "burgerking.svg" };

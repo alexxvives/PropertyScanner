@@ -759,7 +759,7 @@ function paintScores() {
   map.setPaintProperty(MAP_LAYERS.areasFill, "fill-color", expression);
   paintAreaFillOpacity();
   if (mapLegend) {
-    mapLegend.innerHTML = `<span class="swatches" title="${escapeHtml(mode.label)}">${ramp.map((color) => `<i style="background:${color}"></i>`).join("")}</span>`;
+    mapLegend.innerHTML = `<span class="swatches" title="${escapeHtml(mode.label)}">${ramp.map((color) => `<i style="background:${color}"></i>`).join("")}</span><span class="legend-ends"><span>Low</span><span>High</span></span>`;
   }
 }
 
@@ -872,7 +872,8 @@ function tenantBriefHtml(t, bizLabel) {
   const src = t.sources.map((s, i) => `<a class="tb-src" href="${escapeHtml(s.url)}" target="_blank" rel="noopener" title="${escapeHtml(s.label)}" aria-label="Source ${i + 1}: ${escapeHtml(s.label)}"><svg viewBox="0 0 24 24" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg>${i + 1}</a>`).join("");
   return `<div class="tbrief">
     <div class="tbrief__top"><span class="tb-type">${briefIcon("type")}${escapeHtml(b.type || bizLabel)}</span><span class="tb-biz">${escapeHtml(bizLabel)}</span><span class="tb-ver ${ver[2]}" title="${escapeHtml(ver[1])}">${b.verified === "official" ? "✓" : b.verified === "partial" ? "◐" : "!"} ${ver[0]}</span></div>
-    <div class="tbrief__chips">${chip("size", "Size", b.size)}${(b.format || []).length ? `<span class="tb-chip tb-chip--wide">${briefIcon("format")}<small>Format</small><b>${(b.format || []).map(escapeHtml).join(" · ")}</b></span>` : ""}${chip("parking", "Parking", b.parking)}${chip("franchise", "Franchise", b.franchise)}${chip("frontage", "Frontage", b.frontage)}${chip("ceiling", "Ceiling", b.ceiling)}${chip("catchment", "Catchment", b.catchment)}</div>
+    <div class="tbrief__chips">${chip("size", "Size", b.size)}${chip("parking", "Parking", b.parking)}${chip("franchise", "Franchise", b.franchise)}${chip("frontage", "Frontage", b.frontage)}${chip("ceiling", "Ceiling", b.ceiling)}${chip("catchment", "Catchment", b.catchment)}</div>
+    ${(b.format || []).length ? `<div class="tbrief__tags"><small>Format</small>${b.format.map((f) => `<span class="tb-tag">${briefIcon("format")}${escapeHtml(f)}</span>`).join("")}</div>` : ""}
     <div class="tbrief__src"><small>Sources</small>${src}</div>
   </div>`;
 }
@@ -2748,6 +2749,13 @@ function mountMapToolbar() {
     )
     .join("");
   mapHeatmapToolbar.innerHTML = chipBarHtml();
+  const colour = document.getElementById("map-colour");
+  if (colour) {
+    const heatIds = ["fit", ...FILTER_GROUPS.flatMap((g) => g[2])].filter((id) => HEATMAPS[id]);
+    colour.innerHTML = cselHtml("fheat", "Colour", heatIds.map((id) => [id, id === "fit" ? "Best fit" : HEATMAPS[id].label]), state.heatmap, false, "◐", true);
+  }
+  const rn = document.getElementById("rail-n"), n = activeFilterCount();
+  if (rn) { rn.hidden = !n; rn.textContent = n; }
   updateChipCounts();
 }
 
@@ -3515,7 +3523,7 @@ document.addEventListener("pointerover", (event) => {
   const home = filters?.parentElement;
   const panel = document.querySelector(".ranking-panel");
   const openSheet = () => { if (!sheet || !filters) return; body.appendChild(filters); sheet.hidden = false; document.body.classList.add("fsheet-open"); sheet.querySelector(".fsheet__x")?.focus(); syncGo(); };
-  const closeSheet = () => { if (!sheet || sheet.hidden) return; sheet.hidden = true; document.body.classList.remove("fsheet-open"); if (home && filters.parentElement !== home) home.insertBefore(filters, home.firstChild); document.getElementById("m-filters")?.focus(); };
+  const closeSheet = () => { if (!sheet || sheet.hidden) return; sheet.hidden = true; document.body.classList.remove("fsheet-open"); if (home && filters.parentElement !== home) home.appendChild(filters); document.getElementById("m-filters")?.focus(); };
   const syncGo = () => { const t = filters?.querySelector("[data-total-n]")?.textContent; const go = sheet?.querySelector(".fsheet__go"); if (go && t && t !== "…") go.textContent = `Show ${t.replace(/ (match|in view)$/, "")}`; };
   document.getElementById("m-filters")?.addEventListener("click", openSheet);
   sheet?.addEventListener("click", (e) => { if (e.target.closest("[data-fsheet-close]")) closeSheet(); });
@@ -3535,6 +3543,10 @@ document.addEventListener("pointerover", (event) => {
     mv.setAttribute("aria-pressed", String(list));
     mv.querySelector("[data-l]").textContent = list ? "Map view" : "List view";
   });
+  const rail = document.getElementById("filter-rail"), rt = document.getElementById("rail-toggle");
+  const setRail = (open) => { rail?.classList.toggle("is-collapsed", !open); rt?.setAttribute("aria-expanded", String(open)); };
+  { const sv = localStorage.getItem("ps-rail-open"); setRail(sv != null ? sv === "1" : window.innerWidth >= 1400 && window.innerHeight >= 760); }
+  rt?.addEventListener("click", () => { const open = rail.classList.contains("is-collapsed"); setRail(open); localStorage.setItem("ps-rail-open", open ? "1" : "0"); });
   // Neighbourhood ranking: collapsed by default on short screens (the map already shows the same colours).
   const tog = document.getElementById("area-toggle");
   const sec = document.querySelector(".area-rank");
@@ -3719,9 +3731,10 @@ function chipBarHtml() {
   const price = cselHtml("fprice", "Max price", PRICE_OPTS.map(([v, l]) => [String(v), l]), String(state.maxPrice), !!state.maxPrice, "€");
   const size = cselHtml("fsize", "Size", SIZE_OPTS, state.sizeRange, state.sizeRange !== "any", "m²");
   const heatIds = ["fit", ...FILTER_GROUPS.flatMap((g) => g[2])].filter((id) => HEATMAPS[id]);
-  const heat = cselHtml("fheat", "Colour map", heatIds.map((id) => [id, id === "fit" ? "Best fit" : HEATMAPS[id].label]), state.heatmap, false, "◐", true);
+  const heat = "";
+  const _heat = cselHtml("fheat", "Colour map", heatIds.map((id) => [id, id === "fit" ? "Best fit" : HEATMAPS[id].label]), state.heatmap, false, "◐", true);
   const n = activeFilterCount();
-  return `<div class="chipbar" role="group" aria-label="Filter places"><div class="chipbar__chips">${chips}${price}${size}</div><div class="chipbar__foot"><b data-total-n>…</b>${n ? `<button type="button" class="chip-reset" data-chip-reset>Clear ${n}</button>` : ""}${heat}</div></div>`;
+  return `<div class="chipbar" role="group" aria-label="Filter places"><div class="chipbar__chips">${chips}${price}${size}</div><div class="chipbar__foot"><b data-total-n>…</b>${n ? `<button type="button" class="chip-reset" data-chip-reset>Clear ${n}</button>` : ""}</div></div>`;
 }
 function applyListingFilters() {
   mountMapToolbar();

@@ -4,6 +4,7 @@
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Data sources · Property Scanner</title>
+    <link rel="icon" type="image/svg+xml" href="favicon.svg" />
   <style>
     :root { --ink: #1d1915; --muted: #6b625a; --line: #e6ddd1; --paper: #fffdf8; --bg: #f6f1ea; }
     * { box-sizing: border-box; }
@@ -72,7 +73,7 @@
     const NEW4 = ["Valencia", "Sevilla", "Zaragoza", "Málaga"];
     // pulled: date our copy was downloaded (YYYY-MM-DD). cadence: recommended refresh in days (0 = live).
     const SOURCES = [
-      { name: "Commercial listings", what: "Premises for sale and rent: price, size, photos, agency", cities: ALL, src: "Idealista via Apify (igolaizola/idealista-scraper)", url: "https://apify.com/igolaizola/idealista-scraper", fmt: "JSON", period: "Madrid/Barcelona 1,343/900 · 50 sale + 50 rent per new city", pulled: { "Madrid": "2026-10-25", "Barcelona": "2026-10-25", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Continuous", cadence: 7 },
+      { name: "Commercial listings", what: "Premises for sale and rent: price, size, photos, agency", cities: ALL, src: "Idealista via Apify (igolaizola/idealista-scraper)", url: "https://apify.com/igolaizola/idealista-scraper", fmt: "JSON", period: "Sale + rent after dedupe: Madrid 1,282 · Barcelona 844 · Zaragoza 49+49 · Valencia 50+50 · Sevilla 50+48 · Málaga 48+48. New cities clipped to the OSM municipal boundary", pulled: { "Madrid": "2026-10-25", "Barcelona": "2026-10-25", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Continuous", cadence: 7 },
       { name: "Madrid premises census", what: "Every street door: activity, open or closed", cities: ["Madrid"], src: "datos.madrid.es · Censo de locales y actividades", url: "https://datos.madrid.es/", fmt: "CSV", period: "16 Oct 2026", pulled: "2026-10-16", pub: "Monthly", cadence: 30 },
       { name: "Barcelona premises census", what: "Ground-floor premises: activity, empty units for rent or sale", cities: ["Barcelona"], src: "Open Data BCN · Cens de locals en planta baixa", url: "https://opendata-ajuntament.barcelona.cat/data/es/dataset/cens-locals-planta-baixa-act-economica", fmt: "CSV", period: "2024 census", pulled: "2026-10-20", pub: "Every 2–3 years", cadence: 365 },
       { name: "Shops (OpenStreetMap)", what: "Open shops, cafés, restaurants by type. No vacancy", cities: NEW4, src: "OpenStreetMap via Geofabrik extracts", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extract of 1 Nov 2026", pulled: "2026-11-01", pub: "Daily", cadence: 90 },
@@ -97,7 +98,7 @@
       Valencia: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Road traffic"],
       Sevilla: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Loading bays (none published, none in OSM)", "Road traffic"],
       Zaragoza: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Official loading bays (city API not reachable; OSM only)", "Road traffic"],
-      "Málaga": ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Loading bays (none published, none in OSM)", "Road traffic", "Areas are 11 districts, not barrios"],
+      "Málaga": ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Loading bays (none published, none in OSM)", "Road traffic", "Areas are 13 districts, not barrios"],
     };
     const today = new Date();
     const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });

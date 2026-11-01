@@ -159,10 +159,33 @@ def dedupe(features: list) -> tuple[list, int]:
     return keep, dropped
 
 
+def clip_to_municipality(features: list) -> list:
+    """Drop new-city listings outside the OSM municipal boundary (admin_level 8, data/raw/r25/osm_{city}.json)."""
+    from shapely import wkt
+    from shapely.geometry import Point
+    from shapely.prepared import prep
+    munis = {}
+    for c in ("zgz", "vlc", "svq", "agp"):
+        f = ROOT / "data" / "raw" / "r25" / f"osm_{c}.json"
+        if f.exists():
+            munis[c] = prep(wkt.loads(json.loads(f.read_text())["muni"]))
+    kept, out = [], defaultdict(int)
+    for f in features:
+        p = f["properties"]
+        city = CITY.get(p.get("m")) or str(p.get("i", "x-"))[:3]
+        if city in munis and not munis[city].contains(Point(f["geometry"]["coordinates"][:2])):
+            out[f"{city}-{p.get('op', 'sale')}"] += 1
+            continue
+        kept.append(f)
+    print(f"outside municipal boundary, dropped: {dict(out)}")
+    return kept
+
+
 def main() -> None:
     listings = json.loads(gzip.decompress((BUILD / "listings.geojson.gz").read_bytes()))
     places = json.loads(gzip.decompress((BUILD / "places.json.gz").read_bytes()))
     listings["features"], dropped = dedupe(listings["features"])
+    listings["features"] = clip_to_municipality(listings["features"])
     print(f"duplicates merged: {dropped}")
     od_path = BUILD / "opendata.json.gz"
     opendata = json.loads(gzip.decompress(od_path.read_bytes()))["rows"] if od_path.exists() else {}

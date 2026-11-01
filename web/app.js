@@ -184,13 +184,14 @@ const HEATMAPS = {
 
 const SPAIN_BOUNDS = [[-9.6, 35.7], [4.6, 43.9]];
 const JUMPS = {
-  madrid: [[-3.84, 40.33], [-3.58, 40.51]],
-  barcelona: [[2.07, 41.32], [2.23, 41.47]],
-  zaragoza: [[-0.98, 41.6], [-0.83, 41.7]],
-  valencia: [[-0.43, 39.43], [-0.32, 39.51]],
-  sevilla: [[-6.03, 37.34], [-5.92, 37.43]],
-  málaga: [[-4.52, 36.68], [-4.36, 36.75]],
-  malaga: [[-4.52, 36.68], [-4.36, 36.75]],
+  // Each city's core: the 4th-96th percentile of its listings, so a jump frames where the stock is.
+  madrid: [[-3.745, 40.35], [-3.59, 40.49]],
+  barcelona: [[2.125, 41.368], [2.202, 41.442]],
+  zaragoza: [[-0.946, 41.612], [-0.823, 41.68]],
+  valencia: [[-0.418, 39.446], [-0.336, 39.5]],
+  sevilla: [[-6.005, 37.332], [-5.913, 37.428]],
+  málaga: [[-4.54, 36.684], [-4.405, 36.74]],
+  malaga: [[-4.54, 36.684], [-4.405, 36.74]],
   spain: SPAIN_BOUNDS,
 };
 /** Default view: central Madrid, where most leads are. */
@@ -2767,6 +2768,13 @@ function refreshCities() {
   map.getSource(MAP_SOURCES.cities).setData({ type: "FeatureCollection", features });
 }
 
+/** Tighter padding for city jumps: on phones only the header and the sheet peek cover the map. */
+function jumpPadding() {
+  if (window.innerWidth > 760) return mapPadding();
+  const top = (document.getElementById("jump-row")?.getBoundingClientRect().bottom || 120) + 12;
+  return { left: 12, right: 12, top: Math.round(top), bottom: Math.round(window.innerHeight * 0.3) };
+}
+
 function mapPadding() {
   const narrow = window.innerWidth <= 1024;
   if (narrow) {
@@ -3476,7 +3484,7 @@ map.on("click", (event) => {
   const cityHit = queryMapLayerFeatures(event.point, [MAP_LAYERS.cities])[0];
   if (cityHit) {
     const jump = JUMPS[String(cityHit.properties.city || "").toLowerCase()];
-    if (jump) map.fitBounds(jump, { padding: mapPadding(), duration: 700 });
+    if (jump) map.fitBounds(jump, { padding: jumpPadding(), duration: 700 });
     return;
   }
   const cluster = queryMapLayerFeatures(event.point, [MAP_LAYERS.clusters])[0];
@@ -3518,7 +3526,7 @@ document.querySelector("#jump-row")?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-jump]");
   if (!button) return;
   const target = JUMPS[button.dataset.jump];
-  if (target) map.fitBounds(target, { padding: mapPadding(), duration: 700 });
+  if (target) map.fitBounds(target, { padding: jumpPadding(), duration: 700 });
 });
 
 map.on("error", (event) => {

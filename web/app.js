@@ -186,6 +186,11 @@ const SPAIN_BOUNDS = [[-9.6, 35.7], [4.6, 43.9]];
 const JUMPS = {
   madrid: [[-3.84, 40.33], [-3.58, 40.51]],
   barcelona: [[2.07, 41.32], [2.23, 41.47]],
+  zaragoza: [[-0.98, 41.6], [-0.83, 41.7]],
+  valencia: [[-0.43, 39.43], [-0.32, 39.51]],
+  sevilla: [[-6.03, 37.34], [-5.92, 37.43]],
+  málaga: [[-4.52, 36.68], [-4.36, 36.75]],
+  malaga: [[-4.52, 36.68], [-4.36, 36.75]],
   spain: SPAIN_BOUNDS,
 };
 /** Default view: central Madrid, where most leads are. */
@@ -203,6 +208,8 @@ const MAP_LAYERS = {
   areaSelectedHalo: "scanner-area-selected-halo",
   areaSelected: "scanner-area-selected",
   listings: "scanner-listings",
+  clusters: "scanner-listing-clusters",
+  clusterCount: "scanner-listing-cluster-count",
   places: "scanner-places",
 };
 const MAP_SOURCES = {
@@ -214,6 +221,8 @@ const MAP_SOURCES = {
 };
 const MAP_LAYER_STACK = [
   MAP_LAYERS.places,
+  MAP_LAYERS.clusterCount,
+  MAP_LAYERS.clusters,
   MAP_LAYERS.listings,
   MAP_LAYERS.areaSelected,
   MAP_LAYERS.areaSelectedHalo,
@@ -509,8 +518,22 @@ function boundsOf(geometry) {
   return [[minX, minY], [maxX, maxY]];
 }
 
+const CITY_BY_CODE = { mad: "Madrid", bcn: "Barcelona", zgz: "Zaragoza", vlc: "Valencia", svq: "Sevilla", agp: "Málaga" };
+const CITY_CODES = Object.keys(CITY_BY_CODE);
+/** Round 25 cities: no premises census, so shops come from OpenStreetMap and some signals are missing. */
+const CITY_GAPS = {
+  Zaragoza: ["vacancy census", "official shop census", "pedestrian counters", "transit departures", "retail floor (cadastre)", "official loading bays (OSM only)"],
+  Valencia: ["vacancy census", "official shop census", "pedestrian counters", "transit departures", "retail floor (cadastre)"],
+  Sevilla: ["vacancy census", "official shop census", "pedestrian counters", "transit departures", "retail floor (cadastre)", "loading bays"],
+  Málaga: ["vacancy census", "official shop census", "pedestrian counters", "transit departures", "retail floor (cadastre)", "loading bays"],
+};
 function cityOfId(areaId) {
-  return String(areaId).startsWith("bcn-") ? "Barcelona" : "Madrid";
+  return CITY_BY_CODE[String(areaId).slice(0, 3)] || "Madrid";
+}
+/** Madrid and Barcelona share comparable censuses and rank together; OSM-based cities rank only against themselves. */
+function rankGroup(props) {
+  const code = String(props.id || "").slice(0, 3);
+  return code === "mad" || code === "bcn" ? "core" : code;
 }
 
 function parseQuery(id) {
@@ -550,8 +573,9 @@ function neighborhoodFitLines(props, query) {
   const lines = [
     `${formatNumber(props.open_per_km2)} open premises per km²`,
     `${formatNumber(props.matches)} ${plural(query.label, props.matches)} already open`,
-    `${formatNumber(props.vacant)} ${emptyWord}`,
-  ];
+    props.vacant == null ? null : `${formatNumber(props.vacant)} ${emptyWord}`,
+  ].filter(Boolean);
+  if (CITY_GAPS[props.city]) lines.push(`Shops from OpenStreetMap. Not available here: ${CITY_GAPS[props.city].join(", ")}`);
   if (Number.isFinite(props.population)) {
     const density = Number.isFinite(props.pop_per_km2) ? `, ${formatNumber(Math.round(props.pop_per_km2))} per km²` : "";
     lines.push(`${formatNumber(props.population)} residents${density}`);
@@ -582,6 +606,13 @@ function neighborhoodFitLines(props, query) {
     lines.push(`${formatNumber(props.traffic_points)} traffic sensors${flow}`);
   }
   return lines;
+}
+
+function groupRanks(values, groups) {
+  const byGroup = new Map();
+  values.forEach((value, i) => { if (!byGroup.has(groups[i])) byGroup.set(groups[i], []); byGroup.get(groups[i]).push(value); });
+  const sorted = new Map([...byGroup].map(([g, vs]) => [g, vs.filter((v) => Number.isFinite(v)).sort((a, b) => a - b)]));
+  return values.map((value, i) => (Number.isFinite(value) ? rankValue(sorted.get(groups[i]), value) : null));
 }
 
 function ranksOf(values) {
@@ -656,10 +687,11 @@ function scoreAreas() {
     matches: matchCount(area, query),
     complements: complementCount(area, query),
   }));
+  const ranksOf = (values) => groupRanks(values, counted.map((item) => rankGroup(item.area.properties)));
   const feet = ranksOf(counted.map((item) => item.area.properties.open_per_km2));
   const comps = ranksOf(counted.map((item) => item.matches / (item.area.properties.area_km2 || 1)));
   const pals = ranksOf(counted.map((item) => item.complements / (item.area.properties.area_km2 || 1)));
-  const rooms = ranksOf(counted.map((item) => item.area.properties.vacant / (item.area.properties.area_km2 || 1)));
+  const rooms = ranksOf(counted.map((item) => (item.area.properties.vacant == null ? null : item.area.properties.vacant / (item.area.properties.area_km2 || 1))));
   const incomes = ranksOf(counted.map((item) => item.area.properties.income_eur));
   const residents = ranksOf(counted.map((item) => item.area.properties.pop_per_km2));
   const transit = ranksOf(counted.map((item) => transitValue(item.area.properties)));
@@ -670,7 +702,7 @@ function scoreAreas() {
     const props = item.area.properties;
     const km = props.area_km2 || 1;
     props.matches_per_km2 = item.matches / km;
-    props.vacant_per_km2 = props.vacant / km;
+    props.vacant_per_km2 = props.vacant == null ? null : props.vacant / km;
     props.complements_per_km2 = item.complements / km;
     props.share = props.open ? item.matches / props.open : 0;
     const listing = state.listingCounts.get(props.id) || { listed: 0, forRent: 0, forSale: 0 };
@@ -825,7 +857,7 @@ function renderAreaRanking() {
     .sort((a, b) => b.properties.score - a.properties.score);
   areaRankingTitle.textContent = rankingConceptTitle("neighborhood");
   if (!rows.length) {
-    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? (Object.keys(state.metricFilter).length ? "No neighbourhoods match these filters — set one back to Any." : "No neighbourhoods in view — zoom out or jump to Madrid / Barcelona.") : "Loading neighborhoods…"}</p></li>`;
+    areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? (Object.keys(state.metricFilter).length ? "No neighbourhoods match these filters — set one back to Any." : "No neighbourhoods in view — zoom out or jump to a city.") : "Loading neighborhoods…"}</p></li>`;
     return;
   }
   areaRanking.innerHTML = rows
@@ -2022,7 +2054,7 @@ function listingOpenDataHtml(props) {
   const fmt = (n) => formatNumber(Math.round(n));
   if (o.ped) rows.push(["Pedestrians", `${fmt(o.ped[0])} people/day`, `Madrid counter on ${o.ped[2]}, ${o.ped[1]} m away${o.ped[1] > 250 ? " (too far to score)" : ""}`]);
   if (o.pk) rows.push(["Public car parks", o.pk[0] ? `${o.pk[0]} within 300 m` : "None within 300 m", o.pk[0] ? `nearest ${o.pk[1]} m${o.pk[2] ? ` · ${fmt(o.pk[2])} spaces` : ""}` : "OpenStreetMap"]);
-  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", `${o.ld[0] ? `${o.ld[0]} within 100 m · ` : ""}${props.m === "Madrid" ? "Madrid city loading zones" : "Barcelona city loading zones (Open Data BCN)"} + OpenStreetMap · context only, check on site`]);
+  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", `${o.ld[0] ? `${o.ld[0]} within 100 m · ` : ""}${{ Madrid: "Madrid city loading zones + ", Barcelona: "Barcelona city loading zones (Open Data BCN) + ", "València": "Valencia city loading zones + ", Valencia: "Valencia city loading zones + " }[props.m] || ""}OpenStreetMap · context only, check on site`]);
   if (o.mv) rows.push(["Daily visitors into district", `${fmt(o.mv[1])} trips/weekday`, `${o.mv[2] != null ? `${fmt(o.mv[2])} on Saturday · ` : ""}from other districts${o.mv[3] != null ? ` · peak ${o.mv[3]}:00` : ""} · MITMA mobility, June 2025 (district ${o.mv[0].slice(-2)})`]);
   rows.push(["Daytime crowd", `${o.of || 0} offices · ${o.sc || 0} schools`, "within 400 m, OpenStreetMap"]);
   const s = o.sec;
@@ -2524,7 +2556,7 @@ function scoreWalk(lon, lat, feature) {
   }
   const areaKm2 = Math.max(0.05, geometryAreaKm2(feature.geometry));
   const alive = open >= target.openLow * 0.7;
-  const city = lat > 41 ? "Barcelona" : "Madrid";
+  const city = cityOfId(feature.properties.id);
   const ref = walkReference(city, query.id);
   const pct = (key, v) => {
     const arr = ref[key], x = v / areaKm2;
@@ -2552,6 +2584,8 @@ function scoreWalk(lon, lat, feature) {
     { label: "Helpful neighbours in the walk", pct: pPal, dir: "up", tip: "Shops that bring the same customers, inside the walk, per km². More is better.", detail: `${formatNumber(palN)} complementary shops`, score: Math.round(pals * 100), weight: profile.signals.pals, value: pals, line: `${formatNumber(palN)} complementary shops inside the walk` },
     { label: "Empty doors in the walk", pct: pVac, dir: doorsDir, tip: alive ? "Vacant premises inside the walk, per km². On a trading street a moderate number is good (room to open); very many is a warning." : "Empty or closed doors on a thin street — fewer is better.", detail: alive ? `${formatNumber(vacant)} empty doors on a trading street` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street`, score: Math.round(doors * 100), weight: 0.4, value: doors, line: alive ? `${formatNumber(vacant)} empty doors where the street is already trading` : `${formatNumber(vacant + closed)} empty or closed doors on a thin street` },
   ];
+  // no vacancy census outside Madrid/Barcelona: drop the signal and renormalise rather than read 0 empty doors
+  if (CITY_GAPS[city]) parts.pop();
   const weight = parts.reduce((sum, part) => sum + part.weight, 0);
   const score = weight ? Math.round((parts.reduce((sum, part) => sum + part.weight * part.value, 0) / weight) * 100) : 0;
   return { score, parts, open, matchN, city };
@@ -2693,7 +2727,8 @@ function syncListings() {
     if (!bounds.contains([lon, lat])) continue;
     if (state.tenant?.retail && !state.showExcluded && state.tenantEval?.get(feature.properties.id)?.excluded) continue;
     if (!passesListingFilters(feature.properties)) continue;
-    if (zoom >= 11) features.push(feature);
+    // clusters carry each dot's rank so the bubble can be coloured by the best listing inside
+    if (zoom >= 8) features.push({ type: "Feature", geometry: feature.geometry, properties: { ...feature.properties, sc: listingRank(feature.properties).pct ?? 0 } });
   }
   map.getSource(MAP_SOURCES.listings).setData({ type: "FeatureCollection", features });
   updateChipCounts();
@@ -2972,12 +3007,49 @@ function ensureMapLayers() {
       "line-opacity": 1,
     },
   }, before);
-  map.addSource(MAP_SOURCES.listings, { type: "geojson", data: { type: "FeatureCollection", features: [] } });
+  map.addSource(MAP_SOURCES.listings, {
+    type: "geojson",
+    data: { type: "FeatureCollection", features: [] },
+    cluster: true,
+    clusterMaxZoom: 14,
+    clusterRadius: 42,
+    clusterProperties: { best: ["max", ["get", "sc"]] },
+  });
+  const scoreRamp = ["interpolate", ["linear"], ["get", "best"], 0, "#9b2335", 25, "#c2561a", 50, "#e8a317", 72, "#6fb34a", 100, "#1f7a45"];
+  safeAddLayer({
+    id: MAP_LAYERS.clusters,
+    type: "circle",
+    source: MAP_SOURCES.listings,
+    minzoom: 8,
+    filter: ["has", "point_count"],
+    paint: {
+      "circle-radius": ["step", ["get", "point_count"], 14, 10, 18, 40, 23, 120, 28],
+      "circle-color": scoreRamp,
+      "circle-stroke-color": "#fffdf8",
+      "circle-stroke-width": 2.5,
+      "circle-opacity": 0.95,
+    },
+  }, before);
+  safeAddLayer({
+    id: MAP_LAYERS.clusterCount,
+    type: "symbol",
+    source: MAP_SOURCES.listings,
+    minzoom: 8,
+    filter: ["has", "point_count"],
+    layout: {
+      "text-field": ["get", "point_count_abbreviated"],
+      "text-size": 12.5,
+      "text-font": ["Noto Sans Bold"],
+      "text-allow-overlap": true,
+    },
+    paint: { "text-color": "#fffdf8", "text-halo-color": "rgba(29,25,21,0.35)", "text-halo-width": 0.8 },
+  }, before);
   safeAddLayer({
     id: MAP_LAYERS.listings,
     type: "circle",
     source: MAP_SOURCES.listings,
-    minzoom: 11,
+    filter: ["!", ["has", "point_count"]],
+    minzoom: 8,
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 7, 14, 9, 16, 12],
       "circle-color": "#4c1d95",
@@ -3052,8 +3124,8 @@ const fetchJson = (url) => fetch(url).then((response) => {
   return response.json();
 });
 
-const LIST_FILES = ["l-mad-sale", "l-mad-rent", "l-bcn-sale", "l-bcn-rent"];
-const PLACE_FILES = ["p-mad", "p-bcn"];
+const LIST_FILES = CITY_CODES.flatMap((c) => [`l-${c}-sale`, `l-${c}-rent`]);
+const PLACE_FILES = CITY_CODES.map((c) => `p-${c}`);
 let placesPromise = null;
 
 /** Shop rows (186k) are only needed for walk scoring, pins and tallies — fetched after the leads are on screen. */
@@ -3173,7 +3245,7 @@ function tallyListings() {
 function readInputs(fly) {
   const city = "all"; // scoring is city-wide; rankings follow the map viewport
   state.query = parseQuery(pickerValue("business"));
-  const nextCity = city === "Madrid" || city === "Barcelona" ? city : "all";
+  const nextCity = Object.values(CITY_BY_CODE).includes(city) ? city : "all";
   const shouldFly = fly && nextCity !== state.city;
   state.city = nextCity;
   if (state.areas) applyView(shouldFly);
@@ -3368,6 +3440,12 @@ map.on("mousemove", (event) => {
     hideHoverCard();
     return;
   }
+  const hoverCluster = queryMapLayerFeatures(event.point, [MAP_LAYERS.clusters])[0];
+  if (hoverCluster) {
+    map.getCanvas().style.cursor = "pointer";
+    placeHoverCard(event, `<div class="glass hover-card-inner"><p class="kicker">${formatNumber(hoverCluster.properties.point_count)} listings</p><p>Best rank inside: ${Math.round(hoverCluster.properties.best)}/100 · click to zoom in</p></div>`);
+    return;
+  }
   const listing = listingNearCursor(event.point);
   if (listing) {
     map.getCanvas().style.cursor = "pointer";
@@ -3399,6 +3477,13 @@ map.on("click", (event) => {
   if (cityHit) {
     const jump = JUMPS[String(cityHit.properties.city || "").toLowerCase()];
     if (jump) map.fitBounds(jump, { padding: mapPadding(), duration: 700 });
+    return;
+  }
+  const cluster = queryMapLayerFeatures(event.point, [MAP_LAYERS.clusters])[0];
+  if (cluster) {
+    map.getSource(MAP_SOURCES.listings).getClusterExpansionZoom(cluster.properties.cluster_id)
+      .then((zoom) => map.easeTo({ center: cluster.geometry.coordinates, zoom: zoom + 0.3, duration: 500 }))
+      .catch(() => {});
     return;
   }
   const listing = listingNearCursor(event.point);
@@ -3972,7 +4057,7 @@ async function exportShortlist({ print = true } = {}) {
   const nList = state.listings.length;
   const ctx = {
     stats: pdfCityStats(rows), maps, tenantName, tenantEval: !!state.tenantEval && !!tenantObj, pages: rows.length + 3,
-    sources: `Based on ${formatNumber(nList)} listings (Idealista, deduplicated) · INE 2024 income atlas · Madrid pedestrian counters · Madrid & Barcelona premises censuses · OpenStreetMap`,
+    sources: `Based on ${formatNumber(nList)} listings (Idealista, deduplicated) · INE 2024 income atlas · Madrid pedestrian counters · Madrid & Barcelona premises censuses · OpenStreetMap · MITMA mobility · full list on the Data sources page`,
   };
   const pins = snap ? snap.pins.map((q) => `<span class="cv-pin" style="left:${q.x}%;top:${q.y}%">${q.n}</span>`).join("") : "";
   const best = Math.max(...rows.map((r) => r.rank?.pct ?? 0));

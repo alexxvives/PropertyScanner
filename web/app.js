@@ -208,6 +208,8 @@ const MAP_LAYERS = {
   areaSelectedFill: "scanner-area-selected-fill",
   areaSelectedHalo: "scanner-area-selected-halo",
   areaSelected: "scanner-area-selected",
+  listingFocus: "scanner-listing-focus",
+  listingFocusHalo: "scanner-listing-focus-halo",
   listings: "scanner-listings",
   clusters: "scanner-listing-clusters",
   clusterCount: "scanner-listing-cluster-count",
@@ -222,6 +224,8 @@ const MAP_SOURCES = {
 };
 const MAP_LAYER_STACK = [
   MAP_LAYERS.places,
+  MAP_LAYERS.listingFocus,
+  MAP_LAYERS.listingFocusHalo,
   MAP_LAYERS.clusterCount,
   MAP_LAYERS.clusters,
   MAP_LAYERS.listings,
@@ -891,6 +895,7 @@ const BRIEF_ICONS = {
   type: '<path d="M4 10v10h16V10M3 10l2-6h14l2 6z"/>',
   size: '<rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 9h16M9 4v16"/>',
   format: '<path d="M12 21s-7-6.2-7-11a7 7 0 0 1 14 0c0 4.8-7 11-7 11z"/><circle cx="12" cy="10" r="2.5"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   parking: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
   franchise: '<path d="M7 11V7a5 5 0 0 1 10 0v4M5 11h14v9H5z"/>',
   frontage: '<path d="M3 20h18M5 20V8h14v12M3 8h18"/>',
@@ -1690,7 +1695,8 @@ detailModalBody.addEventListener("click", (event) => {
   const src = button.dataset.image || button.querySelector("img")?.getAttribute("src");
   if (!hero || !src) return;
   if (hero.getAttribute("src") !== src) { hero.classList.add("is-loading"); hero.src = src; }
-  hero.parentElement.style.setProperty("--hero-bg", `url("${src.replace(/"/g, "%22")}")`);
+  const lqSrc = button.dataset.lq || src;
+  hero.parentElement.style.setProperty("--hero-bg", `url("${lqSrc.replace(/"/g, "%22")}")`);
   detailModalBody.querySelectorAll(".modal-thumb-btn").forEach((node) => {
     node.classList.toggle("is-active", node === button);
   });
@@ -1970,6 +1976,34 @@ function doorPanelHtml(props) {
   return `<div class="dp">${donut}<div class="dp-tiles">${tiles}</div></div>`;
 }
 
+/* ---- Round 27: right-sized Idealista images, hover prewarm ---- */
+const IMG_SIZE = { s: "WEB_DETAIL-M-L", m: "WEB_DETAIL_TOP-L-L", l: "WEB_DETAIL-XL-L" }; // 600 / 850 / 1500 px wide
+function imgAt(src, size) {
+  return typeof src === "string" && /\/blur\/[^/]+\//.test(src) ? src.replace(/\/blur\/[^/]+\//, `/blur/${IMG_SIZE[size]}/`) : src;
+}
+/** Hero width × screen density decides 850 px or 1500 px (the 2000 px original was 4× heavier than needed). */
+function heroSize() {
+  const w = Math.min(window.innerWidth, 640) * (window.devicePixelRatio || 1);
+  return w <= 900 ? "m" : "l";
+}
+const warmedImages = new Set();
+function warmImage(src, size, priority = "low") {
+  const url = imgAt(src, size);
+  if (!url || warmedImages.has(url)) return;
+  warmedImages.add(url);
+  const img = new Image();
+  img.decoding = "async";
+  if ("fetchPriority" in img) img.fetchPriority = priority;
+  img.src = url;
+}
+/** On hover: fetch the detail JSON and the hero photo so a click opens a complete card. */
+function prewarmListing(props) {
+  if (!props?.id) return;
+  const thumb = props.x?.thumb;
+  if (thumb) { warmImage(thumb, "s", "high"); warmImage(thumb, heroSize()); }
+  ensureListingDetail(props).then((full) => { const first = full?.x?.imgs?.[0]; if (first) warmImage(first, heroSize()); });
+}
+
 function listingHeroHtml(images, url) {
   const badge = idealistaBadge(url);
   if (!images.length) {
@@ -1979,9 +2013,11 @@ function listingHeroHtml(images, url) {
     ? `<button type="button" class="lhero__nav lhero__nav--prev" data-step="-1" aria-label="Previous photo">‹</button><button type="button" class="lhero__nav lhero__nav--next" data-step="1" aria-label="Next photo">›</button><span class="lhero__count"><span data-idx>1</span> / ${images.length}</span>`
     : "";
   const dots = images.length > 1
-    ? `<div class="lhero__strip">${images.map((src, i) => `<button type="button" class="modal-thumb-btn${i === 0 ? " is-active" : ""}" data-image="${escapeHtml(src)}"><img class="is-loading" src="${escapeHtml(src)}" alt="" loading="lazy" /></button>`).join("")}</div>`
+    ? `<div class="lhero__strip">${images.map((src, i) => `<button type="button" class="modal-thumb-btn${i === 0 ? " is-active" : ""}" data-image="${escapeHtml(imgAt(src, heroSize()))}" data-lq="${escapeHtml(imgAt(src, "s"))}"><img class="is-loading" src="${escapeHtml(imgAt(src, "s"))}" alt="" loading="lazy" decoding="async" /></button>`).join("")}</div>`
     : "";
-  return `<div class="lhero modal-hero" style="--hero-bg:url(&quot;${escapeHtml(images[0])}&quot;)">${badge}<img class="hero-img is-loading" src="${escapeHtml(images[0])}" alt="" />${nav}</div>${dots}`;
+  const lq = imgAt(images[0], "s");
+  const hi = imgAt(images[0], heroSize());
+  return `<div class="lhero modal-hero" style="--hero-bg:url(&quot;${escapeHtml(lq)}&quot;)">${badge}<img class="hero-img is-loading" src="${escapeHtml(hi)}" alt="" fetchpriority="high" decoding="async" />${nav}</div>${dots}`;
 }
 
 function listingModalContent(props) {
@@ -2047,20 +2083,74 @@ function listingDupsHtml(props) {
   return `<div class="od-box"><h4>Also listed by ${d.length} other ${d.length === 1 ? "agency" : "agencies"}</h4><p class="unit-note">Same premises (same spot, size and price) — shown once here.</p><ul class="od-list">${rows}</ul></div>`;
 }
 
-/** Facts around the door from open data: pedestrian counter, car parks, loading bays, census section. */
+/** City means of the open-data facts, from the listings of the same city (cached per data load). */
+const odAvgCache = new Map();
+function openDataCityAvg(city) {
+  const key = `${city}|${state.listings?.length || 0}`;
+  if (odAvgCache.has(key)) return odAvgCache.get(key);
+  const acc = {};
+  const add = (k, v) => { if (Number.isFinite(v)) { (acc[k] ||= []).push(v); } };
+  for (const f of state.listings || []) {
+    const p = f.properties;
+    if ((p.m || "") !== city || !p.od) continue;
+    const o = p.od;
+    if (o.ped && o.ped[1] <= 250) add("ped", o.ped[0]);
+    if (o.pk) { add("pkn", o.pk[0]); if (o.pk[1] != null) add("pkd", o.pk[1]); }
+    if (o.ld && o.ld[1] != null) add("ldd", o.ld[1]);
+    if (o.mv) add("mv", o.mv[1]);
+    add("of", o.of || 0); add("sc", o.sc || 0);
+    const sec = o.sec;
+    if (sec) { add("hinc", sec.hinc); add("hh", sec.hh); add("age", sec.age); add("p65", sec.p65); }
+  }
+  const avg = {};
+  for (const [k, v] of Object.entries(acc)) avg[k] = v.reduce((x, y) => x + y, 0) / v.length;
+  odAvgCache.set(key, avg);
+  return avg;
+}
+
+/** "Around the door": tiles with an icon, a big number and a bar against the city average (green better, red worse). */
 function listingOpenDataHtml(props) {
   const o = props.od;
   if (!o) return "";
-  const rows = [];
+  const city = props.m || "";
+  const avg = openDataCityAvg(city);
   const fmt = (n) => formatNumber(Math.round(n));
-  if (o.ped) rows.push(["Pedestrians", `${fmt(o.ped[0])} people/day`, `Madrid counter on ${o.ped[2]}, ${o.ped[1]} m away${o.ped[1] > 250 ? " (too far to score)" : ""}`]);
-  if (o.pk) rows.push(["Public car parks", o.pk[0] ? `${o.pk[0]} within 300 m` : "None within 300 m", o.pk[0] ? `nearest ${o.pk[1]} m${o.pk[2] ? ` · ${fmt(o.pk[2])} spaces` : ""}` : "OpenStreetMap"]);
-  if (o.ld) rows.push(["Loading bays", o.ld[1] != null ? `nearest ${o.ld[1]} m` : "None within 300 m", `${o.ld[0] ? `${o.ld[0]} within 100 m · ` : ""}${{ Madrid: "Madrid city loading zones + ", Barcelona: "Barcelona city loading zones (Open Data BCN) + ", "València": "Valencia city loading zones + ", Valencia: "Valencia city loading zones + " }[props.m] || ""}OpenStreetMap · context only, check on site`]);
-  if (o.mv) rows.push(["Daily visitors into district", `${fmt(o.mv[1])} trips/weekday`, `${o.mv[2] != null ? `${fmt(o.mv[2])} on Saturday · ` : ""}from other districts${o.mv[3] != null ? ` · peak ${o.mv[3]}:00` : ""} · MITMA mobility, June 2025 (district ${o.mv[0].slice(-2)})`]);
-  rows.push(["Daytime crowd", `${o.of || 0} offices · ${o.sc || 0} schools`, "within 400 m, OpenStreetMap"]);
-  const s = o.sec;
-  if (s) rows.push(["Census section", `${s.hinc ? `${fmt(s.hinc)} €/household` : "—"}`, [s.hh ? `${String(s.hh).replace(".", ",")} people/home` : "", s.age ? `average age ${String(s.age).replace(".", ",")}` : "", s.p65 != null ? `${String(s.p65).replace(".", ",")}% over 65` : "", `INE ${s.yr || ""}`].filter(Boolean).join(" · ")]);
-  return `<div class="od-box"><h4>Around the door (open data)</h4><ul class="od-list">${rows.map(([k, v, n]) => `<li><b>${escapeHtml(k)}</b><span>${escapeHtml(v)}</span><small>${escapeHtml(n)}</small></li>`).join("")}</ul></div>`;
+  const dec = (n) => String(Math.round(n * 10) / 10).replace(".", ",");
+  // dir: 1 = more is better, -1 = less is better, 0 = neutral (grey)
+  const gauge = (v, a, dir) => {
+    if (!Number.isFinite(v) || !Number.isFinite(a) || a <= 0) return "";
+    const r = v / a;
+    const w = Math.max(3, Math.min(100, r * 50));
+    const good = dir === 0 ? null : Math.max(0, Math.min(100, 50 + (dir > 0 ? r - 1 : 1 - r) * 60));
+    const col = good == null ? "#8c857b" : pdfHue(good);
+    const tag = r >= 1.05 ? `${dec(r)}×` : r <= 0.95 ? `${dec(r)}×` : "≈";
+    return `<div class="odt__g" title="City average ${fmt(a)}"><i><s style="width:${w}%;background:${col}"></s><em></em></i><span style="color:${col}">${tag} avg</span></div>`;
+  };
+  const pill = (t) => `<span class="odt__pill">${escapeHtml(t)}</span>`;
+  const src = (t) => `<span class="odt__src" tabindex="0" title="${escapeHtml(t)}" aria-label="Source: ${escapeHtml(t)}">i</span>`;
+  const tile = (icon, label, big, unit, g, pills, source, extra = "") => `<div class="odt">
+    <div class="odt__h"><span class="odt__ic">${pdfIcon(icon)}</span><span class="odt__l">${escapeHtml(label)}</span>${src(source)}</div>
+    <div class="odt__v">${big}${unit ? `<small>${unit}</small>` : ""}</div>${g}${extra}${pills ? `<div class="odt__p">${pills}</div>` : ""}
+  </div>`;
+  const tiles = [];
+  if (o.ped) {
+    const near = o.ped[1] <= 250;
+    tiles.push(tile("walk", "Pedestrians", fmt(o.ped[0]), "/day", near ? gauge(o.ped[0], avg.ped, 1) : "", pill(`${o.ped[1]} m`) + (near ? "" : pill("too far to score")), `Madrid pedestrian counter ${o.ped[2] || ""}`));
+  }
+  if (o.pk) tiles.push(tile("parking", "Car parks", o.pk[0] || 0, "in 300 m", gauge(o.pk[0] || 0, avg.pkn, 1), (o.pk[1] != null ? pill(`${o.pk[1]} m`) : "") + (o.pk[2] ? pill(`${fmt(o.pk[2])} spaces`) : ""), "OpenStreetMap"));
+  if (o.ld) tiles.push(tile("truck", "Loading bay", o.ld[1] != null ? o.ld[1] : "—", o.ld[1] != null ? "m" : "none in 300 m", o.ld[1] != null ? gauge(o.ld[1], avg.ldd, -1) : "", o.ld[0] ? pill(`${o.ld[0]} in 100 m`) : "", `${{ Madrid: "Madrid loading zones + ", Barcelona: "Open Data BCN + ", "València": "Valencia loading zones + ", Valencia: "Valencia loading zones + " }[city] || ""}OpenStreetMap`));
+  if (o.mv) tiles.push(tile("trips", "Visitors", `${dec(o.mv[1] / 1000)}k`, "trips/weekday", gauge(o.mv[1], avg.mv, 1), (o.mv[2] != null ? pill(`Sat ${dec(o.mv[2] / 1000)}k`) : "") + (o.mv[3] != null ? pill(`peak ${o.mv[3]}:00`) : ""), `MITMA mobility, June 2025 · district ${String(o.mv[0]).slice(-2)}`));
+  const crowd = (o.of || 0) + (o.sc || 0);
+  tiles.push(tile("office", "Daytime crowd", crowd, "in 400 m", gauge(crowd, (avg.of || 0) + (avg.sc || 0), 1), pill(`${o.of || 0} offices`) + pill(`${o.sc || 0} schools`), "OpenStreetMap"));
+  const sec = o.sec;
+  const census = [];
+  if (sec) {
+    if (sec.hinc) census.push(tile("wallet", "Household income", `${dec(sec.hinc / 1000)}k`, "€/yr", gauge(sec.hinc, avg.hinc, 1), "", `INE ${sec.yr || ""} census section`));
+    if (sec.hh) census.push(tile("people", "Household size", dec(sec.hh), "people", gauge(sec.hh, avg.hh, 0), "", `INE ${sec.yr || ""} census section`));
+    if (sec.age) census.push(tile("clock", "Average age", dec(sec.age), "yrs", gauge(sec.age, avg.age, 0), "", `INE ${sec.yr || ""} census section`));
+    if (sec.p65 != null) census.push(tile("people", "Over 65", dec(sec.p65), "%", gauge(sec.p65, avg.p65, 0), "", `INE ${sec.yr || ""} census section`));
+  }
+  return `<div class="od-box od-box--tiles"><h4>Around the door</h4><div class="odt-grid">${tiles.join("")}</div>${census.length ? `<h5 class="odt-sub">Census section</h5><div class="odt-grid">${census.join("")}</div>` : ""}<p class="odt-key"><i></i> city average · bar = this door</p></div>`;
 }
 
 function listingDetailsTabHtml(props) {
@@ -2215,6 +2305,7 @@ function areaModalContent(props) {
 
 function openListingDetail(props, coordinates) {
   state.activeListingId = props.id || null;
+  applyListingFocus();
   if (props.i) {
     setSelected(props.i);
     renderAreaRanking();
@@ -2241,7 +2332,7 @@ function openListingDetail(props, coordinates) {
 // Prefetch a listing's detail when the pointer or focus lands on its row, so the card opens complete.
 ["pointerover", "focusin"].forEach((type) => document.addEventListener(type, (event) => {
   const row = event.target.closest?.('[data-kind="listing"][data-id]');
-  if (row) ensureListingDetail(state.listingById.get(row.dataset.id)?.properties);
+  if (row) prewarmListing(state.listingById.get(row.dataset.id)?.properties);
 }, { passive: true }));
 
 function openListingById(id) {
@@ -2281,7 +2372,7 @@ function listingDetailBlock(props, { open = false } = {}) {
 }
 
 function listingCard(props, { wrap = true } = {}) {
-  const strip = "#4c1d95";
+  const strip = "#1d1915";
   const detail = props.x || {};
   const area = state.areaById?.get(props.i);
   const areaProps = area?.properties;
@@ -2305,6 +2396,36 @@ function listingCard(props, { wrap = true } = {}) {
     <p class="unit-note">Click for photos and the full listing modal.</p>`;
   if (!wrap) return inner;
   return `<div class="place-card" style="--strip:${strip}">${inner}</div>`;
+}
+
+/** Map hover card for a listing: photo, score badge, price, size, €/m² and up to three signal tags. */
+function listingHoverHtml(props) {
+  const rank = listingRank(props);
+  const pct = Number.isFinite(rank?.pct) ? Math.round(rank.pct) : null;
+  const thumb = props.x?.thumb ? imgAt(props.x.thumb, "s") : "";
+  const pm2 = props.p && props.sz ? Math.round(props.p / props.sz) : null;
+  const o = props.od || {};
+  const nb = rank?.parts?.find((x) => x.id === "micro")?.nb || [];
+  const tags = [];
+  if (props.inv?.price_drop_pct) tags.push(["down", `−${props.inv.price_drop_pct}%`, "Price cut"]);
+  if (o.ped && o.ped[1] <= 250) tags.push(["walk", `${formatNumber(Math.round(o.ped[0] / 1000))}k/day`, "Pedestrians"]);
+  if (Number.isFinite(nb[0])) tags.push(["store", `${formatNumber(nb[0])} shops`, "Open shops within 300 m"]);
+  if (o.pk && o.pk[1] != null && o.pk[1] <= 300) tags.push(["parking", `${o.pk[1]} m`, "Nearest public car park"]);
+  if (o.mv && tags.length < 3) tags.push(["trips", `${formatNumber(Math.round(o.mv[1] / 1000))}k trips`, "Weekday visitors into the district"]);
+  const op = props.op === "rent" ? "For rent" : "For sale";
+  const place = [props.n, props.d && props.d !== props.n ? props.d : "", props.m].filter(Boolean).slice(0, 2).join(" · ");
+  return `<div class="hc">
+    <div class="hc__img">${thumb ? `<img class="is-loading" src="${escapeHtml(thumb)}" alt="" decoding="async" fetchpriority="high" />` : `<span class="hc__noimg">${pdfIcon("store")}</span>`}
+      <span class="hc__op hc__op--${props.op === "rent" ? "rent" : "sale"}">${op}</span>
+      ${pct != null ? `<span class="hc__score" style="--c:${pdfHue(pct)}"><b>${pct}</b><small>/100</small></span>` : ""}
+    </div>
+    <div class="hc__body">
+      <div class="hc__price">${props.p ? formatEuro(props.p) : "—"}${props.op === "rent" ? "<small>/mo</small>" : ""}</div>
+      <div class="hc__facts">${props.sz ? `<span>${formatNumber(props.sz)} m²</span>` : ""}${pm2 ? `<span>${formatNumber(pm2)} €/m²</span>` : ""}</div>
+      ${place ? `<div class="hc__place">${PIN_ICON}<span>${escapeHtml(place)}</span></div>` : ""}
+      ${tags.length ? `<div class="hc__tags">${tags.slice(0, 3).map(([i, v, t]) => `<span title="${escapeHtml(t)}">${pdfIcon(i)}${escapeHtml(v)}</span>`).join("")}</div>` : ""}
+    </div>
+  </div>`;
 }
 
 function shopCard(props, { wrap = true, pinned = false } = {}) {
@@ -2639,6 +2760,15 @@ function showCatchment(lon, lat) {
     });
 }
 
+["pointerover", "focusin"].forEach((type) => document.addEventListener(type, (event) => {
+  const row = event.target.closest?.('#area-ranking [data-kind="area"][data-id]');
+  const id = row ? row.dataset.id : null;
+  if (id === (state.previewAreaId || null)) return;
+  state.previewAreaId = id;
+  if (typeof map !== "undefined") applySelectedAreaFilter();
+}, { passive: true }));
+document.addEventListener("pointerleave", () => { if (state.previewAreaId) { state.previewAreaId = null; applySelectedAreaFilter(); } });
+
 function setSelected(id) {
   state.selectedId = id || null;
   applySelectedAreaFilter();
@@ -2780,7 +2910,7 @@ function mapPadding() {
   if (narrow) {
     return { left: 24, right: 24, top: window.innerWidth > 760 ? 40 : 200, bottom: Math.round(window.innerHeight * 0.44) };
   }
-  return { left: 390, right: 500, top: 30, bottom: 30 };
+  return { left: document.body.classList.contains("left-closed") ? 60 : 390, right: 500, top: 30, bottom: 30 };
 }
 
 function mountMapToolbar() {
@@ -2875,8 +3005,16 @@ function switchMapStyle(styleId) {
   });
 }
 
+/** Hovered or open listing: near-black dot with a white ring, drawn above the rest. */
+function applyListingFocus() {
+  const id = state.hoverListingId || state.activeListingId || "__none__";
+  const f = ["all", ["!", ["has", "point_count"]], ["==", ["get", "id"], id]];
+  if (map.getLayer(MAP_LAYERS.listingFocus)) map.setFilter(MAP_LAYERS.listingFocus, f);
+  if (map.getLayer(MAP_LAYERS.listingFocusHalo)) map.setFilter(MAP_LAYERS.listingFocusHalo, f);
+}
+
 function applySelectedAreaFilter() {
-  const id = state.selectedId || "";
+  const id = state.previewAreaId || state.selectedId || "";
   const filter = ["==", ["get", "id"], id];
   if (map.getLayer(MAP_LAYERS.areaSelected)) map.setFilter(MAP_LAYERS.areaSelected, filter);
   if (map.getLayer(MAP_LAYERS.areaSelectedHalo)) map.setFilter(MAP_LAYERS.areaSelectedHalo, filter);
@@ -3060,12 +3198,34 @@ function ensureMapLayers() {
     minzoom: 8,
     paint: {
       "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 7, 14, 9, 16, 12],
-      "circle-color": "#4c1d95",
+      "circle-color": "#1d1915",
       "circle-stroke-color": "#fffdf8",
       "circle-stroke-width": 2.2,
       "circle-opacity": 0.95,
     },
   }, before);
+  safeAddLayer({
+    id: MAP_LAYERS.listingFocusHalo,
+    type: "circle",
+    source: MAP_SOURCES.listings,
+    minzoom: 8,
+    filter: ["==", ["get", "id"], "__none__"],
+    paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 17, 14, 19, 16, 22], "circle-color": "rgba(17,17,17,0.22)", "circle-blur": 0.5 },
+  }, before);
+  safeAddLayer({
+    id: MAP_LAYERS.listingFocus,
+    type: "circle",
+    source: MAP_SOURCES.listings,
+    minzoom: 8,
+    filter: ["==", ["get", "id"], "__none__"],
+    paint: {
+      "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 10, 14, 12, 16, 15],
+      "circle-color": "#111",
+      "circle-stroke-color": "#fff",
+      "circle-stroke-width": 3.5,
+    },
+  }, before);
+  applyListingFocus();
   safeAddLayer({
     id: MAP_LAYERS.places,
     type: "circle",
@@ -3457,9 +3617,12 @@ map.on("mousemove", (event) => {
   const listing = listingNearCursor(event.point);
   if (listing) {
     map.getCanvas().style.cursor = "pointer";
-    placeHoverCard(event, `<div class="glass hover-card-inner">${listingCard(listing.properties)}</div>`);
+    const lp = state.listingById.get(listing.properties.id)?.properties || listing.properties;
+    if (state.hoverListingId !== lp.id) { state.hoverListingId = lp.id; applyListingFocus(); prewarmListing(lp); }
+    placeHoverCard(event, listingHoverHtml(lp));
     return;
   }
+  if (state.hoverListingId) { state.hoverListingId = null; applyListingFocus(); }
   const shop = placeNearCursor(event.point);
   if (shop) {
     map.getCanvas().style.cursor = "pointer";
@@ -3477,7 +3640,7 @@ map.on("mousemove", (event) => {
   hideHoverCard();
 });
 
-map.on("mouseout", hideHoverCard);
+map.on("mouseout", () => { hideHoverCard(); if (state.hoverListingId) { state.hoverListingId = null; applyListingFocus(); } });
 
 map.on("click", (event) => {
   if (!mapOverlayReady) return;
@@ -3588,19 +3751,17 @@ document.addEventListener("pointerover", (event) => {
     panel.dataset.tab = tab;
     panel.querySelectorAll("[data-sheet-tab]").forEach((b) => b.classList.toggle("is-on", b.dataset.sheetTab === tab));
   };
+  // Round 27: the neighbourhood ranking always lives in the right panel, one tab at a time.
   const apply = () => {
-    if (phone.matches) {
-      if (areaRank.parentElement !== panel) panel.insertBefore(areaRank, panel.querySelector(".listing-rank"));
-      if (!panel.dataset.tab) setTab("areas");
-    } else if (areaRank.parentElement !== search) {
-      search.appendChild(areaRank);
-      panel.classList.remove("is-expanded");
-    }
+    if (areaRank.parentElement !== panel) panel.insertBefore(areaRank, panel.querySelector(".listing-rank"));
+    areaRank.classList.remove("is-collapsed");
+    if (!panel.dataset.tab) setTab(localStorage.getItem("ps-rank-tab") || (phone.matches ? "areas" : "listings"));
+    if (!phone.matches) panel.classList.remove("is-expanded");
     if (typeof map !== "undefined" && map?.resize) setTimeout(() => map.resize(), 50);
   };
   panel.addEventListener("click", (event) => {
     const tab = event.target.closest("[data-sheet-tab]");
-    if (tab) { setTab(tab.dataset.sheetTab); panel.classList.add("is-expanded"); }
+    if (tab) { setTab(tab.dataset.sheetTab); localStorage.setItem("ps-rank-tab", tab.dataset.sheetTab); if (phone.matches) panel.classList.add("is-expanded"); }
     if (event.target.closest("#sheet-handle")) panel.classList.toggle("is-expanded");
   });
   phone.addEventListener("change", apply);
@@ -3645,8 +3806,37 @@ document.addEventListener("pointerover", (event) => {
   const sec = document.querySelector(".area-rank");
   const saved = localStorage.getItem("ps-areas-open");
   const setOpen = (open) => { sec?.classList.toggle("is-collapsed", !open); tog?.setAttribute("aria-expanded", String(open)); };
-  setOpen(saved != null ? saved === "1" : window.innerHeight >= 860);
+  setOpen(true); void saved;
   tog?.addEventListener("click", () => { const open = sec.classList.contains("is-collapsed"); setOpen(open); localStorage.setItem("ps-areas-open", open ? "1" : "0"); });
+})();
+
+/* ---- Round 27: collapsible left panel (remembered), slim rail to reopen ---- */
+(function leftPanelCollapse() {
+  const btn = document.getElementById("panel-collapse");
+  const rail = document.getElementById("panel-rail");
+  const set = (closed, save) => {
+    document.body.classList.toggle("left-closed", closed);
+    btn?.setAttribute("aria-expanded", String(!closed));
+    rail?.setAttribute("aria-expanded", String(!closed));
+    if (rail) rail.hidden = !closed;
+    if (save) localStorage.setItem("ps-left-closed", closed ? "1" : "0");
+    if (typeof map !== "undefined" && map?.resize) setTimeout(() => { map.resize(); }, 260);
+  };
+  set(localStorage.getItem("ps-left-closed") === "1", false);
+  btn?.addEventListener("click", () => set(true, true));
+  rail?.addEventListener("click", () => set(false, true));
+})();
+
+/* ---- Round 27: map style switcher sits right under the colour box on desktop ---- */
+(function stackStylesUnderColour() {
+  const colour = document.querySelector(".map-toolbar--colour");
+  const styles = document.querySelector(".map-toolbar--styles");
+  const desk = window.matchMedia("(min-width: 1025px)");
+  if (!colour || !styles || !window.ResizeObserver) return;
+  const place = () => { styles.style.top = desk.matches ? `${colour.offsetHeight + 8}px` : ""; };
+  new ResizeObserver(place).observe(colour);
+  desk.addEventListener("change", place);
+  place();
 })();
 
 /* ---- Image skeletons: fade images in once loaded ---- */
@@ -3986,6 +4176,7 @@ const PDF_ICONS = {
   office: '<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h2M13 7h2M9 11h2M13 11h2M9 15h2M13 15h2"/>',
   trips: '<path d="M4 17h4l3-10 3 10h6M17 14l3 3-3 3"/>',
   truck: '<path d="M2 7h11v9H2zM13 10h4l3 3v3h-7"/><circle cx="6" cy="17.5" r="1.8"/><circle cx="17" cy="17.5" r="1.8"/>',
+  down: '<path d="M12 5v14M6 13l6 6 6-6"/>',
   parking: '<rect x="4" y="4" width="16" height="16" rx="3"/><path d="M10 16V8h3a2.5 2.5 0 0 1 0 5h-3"/>',
 };
 const pdfIcon = (k) => `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${PDF_ICONS[k]}</svg>`;

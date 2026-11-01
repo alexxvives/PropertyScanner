@@ -398,11 +398,14 @@ function listingEngagementTagsHtml(detail) {
   return `<div class="lead-stat-tags">${tags.map((tag) => `<span class="lead-stat-tag">${escapeHtml(tag)}</span>`).join("")}</div>`;
 }
 
+/** Same header for both rankings: title, then the business type as an uppercase chip. */
+function rankingTitleHtml(title, chip, note = "") {
+  return `<span class="rk-t">${escapeHtml(title)}</span><span class="rk-chip">${escapeHtml(String(chip || "").toUpperCase())}</span>${note ? `<span class="rk-note">${escapeHtml(note)}</span>` : ""}`;
+}
+
 function rankingConceptTitle(kind) {
   const query = state.query || parseQuery(pickerValue("business") || "bakery");
-  const concept = query.label.toLowerCase();
-  if (kind === "property") return `Property ranking · ${concept}`;
-  return `Neighborhood ranking · ${concept}`;
+  return rankingTitleHtml(kind === "property" ? "Property ranking" : "Neighbourhood ranking", query.label);
 }
 
 /** Spread rank-based 0–1 values so scores use more of the bar (less clustering around 50). */
@@ -860,7 +863,7 @@ function renderAreaRanking() {
   const rows = areasInView()
     .slice()
     .sort((a, b) => b.properties.score - a.properties.score);
-  areaRankingTitle.textContent = rankingConceptTitle("neighborhood");
+  areaRankingTitle.innerHTML = rankingConceptTitle("neighborhood");
   if (!rows.length) {
     areaRanking.innerHTML = `<li><p class="pinned-empty">${state.areas ? (Object.keys(state.metricFilter).length ? "No neighbourhoods match these filters — set one back to Any." : "No neighbourhoods in view — zoom out or jump to a city.") : "Loading neighborhoods…"}</p></li>`;
     return;
@@ -1118,7 +1121,7 @@ function renderListingRanking() {
   if (!listingRanking || !listingRankingTitle) return;
   const items = buildOverallRanking();
   renderTenantToggle();
-  listingRankingTitle.textContent = state.tenant ? `Property ranking · ${state.tenant.name}${state.tenantNearMiss ? " (no full pass in view — closest)" : " · hard filters passed"}` : rankingConceptTitle("property");
+  listingRankingTitle.innerHTML = state.tenant ? rankingTitleHtml("Property ranking", state.tenant.name, state.tenantNearMiss ? "No full pass in view, closest shown" : "Hard filters passed") : rankingConceptTitle("property");
   listingRanking.innerHTML = items.length
     ? items
         .map((item, index) => {
@@ -2910,7 +2913,7 @@ function mapPadding() {
   if (narrow) {
     return { left: 24, right: 24, top: window.innerWidth > 760 ? 40 : 200, bottom: Math.round(window.innerHeight * 0.44) };
   }
-  return { left: document.body.classList.contains("left-closed") ? 60 : 390, right: 500, top: 30, bottom: 30 };
+  return { left: document.body.classList.contains("left-closed") ? 60 : 390, right: document.body.classList.contains("right-closed") ? 60 : 500, top: 30, bottom: 30 };
 }
 
 function mountMapToolbar() {
@@ -3827,6 +3830,22 @@ document.addEventListener("pointerover", (event) => {
   rail?.addEventListener("click", () => set(false, true));
 })();
 
+/* ---- Round 28: collapsible right panel (remembered), slim rail to reopen ---- */
+(function rightPanelCollapse() {
+  const btn = document.getElementById("rpanel-collapse");
+  const rail = document.getElementById("rpanel-rail");
+  const set = (closed, save) => {
+    document.body.classList.toggle("right-closed", closed);
+    btn?.setAttribute("aria-expanded", String(!closed));
+    if (rail) rail.hidden = !closed;
+    if (save) localStorage.setItem("ps-right-closed", closed ? "1" : "0");
+    if (typeof map !== "undefined" && map?.resize) setTimeout(() => map.resize(), 260);
+  };
+  set(localStorage.getItem("ps-right-closed") === "1", false);
+  btn?.addEventListener("click", () => set(true, true));
+  rail?.addEventListener("click", () => set(false, true));
+})();
+
 /* ---- Round 27: map style switcher sits right under the colour box on desktop ---- */
 (function stackStylesUnderColour() {
   const colour = document.querySelector(".map-toolbar--colour");
@@ -3974,32 +3993,52 @@ function cselHtml(kind, label, opts, value, on, glyph, search = opts.length > 8)
     <div class="csel__menu" id="${id}" role="listbox" aria-label="${escapeHtml(label)}" hidden>${search ? `<input type="search" class="csel__q" placeholder="Search" aria-label="Search ${escapeHtml(label)}" autocomplete="off">` : ""}${opts.map(([v, l]) => `<button type="button" role="option" data-v="${escapeHtml(v)}" aria-selected="${v === cur[0]}" class="${v === cur[0] ? "is-on" : ""}"><span>${escapeHtml(l)}</span><em></em></button>`).join("")}</div>
   </div>`;
 }
+/** Menus inside a scrolling panel float above the page (fixed), so opening one never pushes or clips the panel. */
+function cselMenu(c) { return c._menu || c.querySelector(".csel__menu"); }
+function popOutMenu(c, menu, btn, open) {
+  const host = c.closest(".map-toolbar--filters, .search-card, .ranking-panel");
+  if (!open || !host || window.innerWidth <= 760 || c.closest(".fsheet__body")) { menu.classList.remove("csel__menu--pop"); menu.style.cssText = ""; if (menu.parentElement === document.body) c.appendChild(menu); return; }
+  const r = btn.getBoundingClientRect();
+  const w = Math.max(220, r.width);
+  const side = c.closest(".map-toolbar--filters");
+  let left = side ? r.right + 8 : r.left;
+  if (left + w > window.innerWidth - 8) left = Math.max(8, r.left - w - 8);
+  const top = side ? r.top : r.bottom + 6;
+  menu._owner = c; c._menu = menu;
+  if (menu.parentElement !== document.body) document.body.appendChild(menu);
+  menu.classList.add("csel__menu--pop");
+  menu.style.cssText = `position:fixed;left:${Math.round(left)}px;top:${Math.round(top)}px;transform:none;width:${Math.round(w)}px;max-height:${Math.max(160, Math.round(window.innerHeight - top - 12))}px;z-index:1000`;
+}
+window.addEventListener("resize", () => closeCsels());
+
 function closeCsels(except) {
-  document.querySelectorAll(".csel").forEach((c) => { if (c === except) return; c.querySelector(".csel__menu").hidden = true; c.querySelector(".csel__btn").setAttribute("aria-expanded", "false"); c.classList.remove("is-open"); });
+  document.querySelectorAll("body > .csel__menu--pop").forEach((m) => { if (!m._owner?.isConnected) m.remove(); else if (m._owner !== except) { m.classList.remove("csel__menu--pop"); m.style.cssText = ""; m._owner.appendChild(m); } });
+  document.querySelectorAll(".csel").forEach((c) => { if (c === except) return; cselMenu(c).hidden = true; c.querySelector(".csel__btn").setAttribute("aria-expanded", "false"); c.classList.remove("is-open"); });
 }
 document.addEventListener("click", (event) => {
-  const c = event.target.closest(".csel");
+  const c = event.target.closest(".csel") || event.target.closest(".csel__menu")?._owner;
   if (!c) { closeCsels(); return; }
-  const menu = c.querySelector(".csel__menu"), btn = c.querySelector(".csel__btn");
+  const menu = cselMenu(c), btn = c.querySelector(".csel__btn");
   const opt = event.target.closest("[data-v]");
   if (opt) { closeCsels(); btn.focus(); cselPick(c.dataset.csel, opt.dataset.v); return; }
   if (btn.contains(event.target)) {
     const open = menu.hidden;
     closeCsels(c);
     menu.hidden = !open; btn.setAttribute("aria-expanded", String(open)); c.classList.toggle("is-open", open);
-    if (open) (menu.querySelector("input") || menu.querySelector('[aria-selected="true"]'))?.focus();
+    popOutMenu(c, menu, btn, open);
+    if (open) (menu.querySelector("input") || menu.querySelector('[aria-selected="true"]'))?.focus({ preventScroll: true });
   }
 });
 document.addEventListener("keydown", (event) => {
-  const c = event.target.closest?.(".csel");
+  const c = event.target.closest?.(".csel") || event.target.closest?.(".csel__menu")?._owner;
   if (!c) return;
-  const menu = c.querySelector(".csel__menu"), btn = c.querySelector(".csel__btn");
+  const menu = cselMenu(c), btn = c.querySelector(".csel__btn");
   if (event.key === "Escape") { closeCsels(); btn.focus(); return; }
   listboxKeys(event, menu, () => { closeCsels(c); menu.hidden = false; btn.setAttribute("aria-expanded", "true"); c.classList.add("is-open"); });
 });
 document.addEventListener("input", (event) => {
   const q = event.target.closest(".csel__q");
-  if (!q || !q.closest(".csel")) return;
+  if (!q || !(q.closest(".csel") || q.closest(".csel__menu")?._owner)) return;
   const v = q.value.trim().toLowerCase();
   q.parentElement.querySelectorAll("[data-v]").forEach((o) => { o.hidden = !!v && !o.textContent.toLowerCase().includes(v); });
 });
@@ -4050,8 +4089,34 @@ function renderPdfBar() {
     listingRanking.insertAdjacentElement("beforebegin", bar);
   }
   const n = state.ticked.size;
-  bar.innerHTML = `<button type="button" class="pdf-btn" data-pdf-export>⬇ PDF shortlist · ${n ? `${n} ticked` : "top 5"}</button>${n ? `<button type="button" class="pdf-clear" data-pdf-clear>Untick all</button>` : `<span class="unit-note">Tick places to choose your own</span>`}`;
+  let dflt = 5; try { dflt = shortlistRows().length; } catch {}
+  const dl = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
+  bar.innerHTML = `<button type="button" class="pdf-btn2" data-pdf-export title="Export a PDF shortlist">${dl}<span>Shortlist PDF</span><b class="pdf-n${n ? " is-on" : ""}">${n || dflt}</b></button><span class="pdf-sub">${n ? "ticked" : `top ${dflt}`}</span>${n ? `<button type="button" class="pdf-x" data-pdf-clear title="Untick all" aria-label="Untick all">×</button>` : ""}`;
+  renderShortlistCard();
 }
+
+/** Left panel: the places ticked so far (or the current top 5), one tap to open, plus the PDF button. */
+function renderShortlistCard() {
+  const box = document.getElementById("shortlist-card");
+  if (!box) return;
+  const ticked = state.ticked.size;
+  let rows = [];
+  try { rows = shortlistRows().slice(0, 6); } catch { rows = []; }
+  const item = (r) => {
+    const p = r.props, pct = r.rank?.pct ?? listingRank(p)?.pct;
+    const thumb = p.x?.thumb ? imgAt(p.x.thumb, "s") : "";
+    return `<li><button type="button" data-kind="listing" data-id="${escapeHtml(p.id)}">${thumb ? `<img src="${escapeHtml(thumb)}" alt="" loading="lazy" decoding="async">` : `<i class="sl-noimg"></i>`}<span class="sl-t"><b>${p.p ? formatEuro(p.p) : "—"}${p.op === "rent" ? "<small>/mo</small>" : ""}</b><small>${escapeHtml([p.sz ? `${formatNumber(p.sz)} m²` : "", r.areaName || p.n || ""].filter(Boolean).join(" · "))}</small></span>${Number.isFinite(pct) ? `<em>${Math.round(pct)}</em>` : ""}</button>${ticked ? `<button type="button" class="sl-x" data-untick="${escapeHtml(p.id)}" aria-label="Remove">×</button>` : ""}</li>`;
+  };
+  box.innerHTML = `<div class="sl-head"><span class="sl-title">Your shortlist</span><span class="sl-count">${ticked ? `${ticked} ticked` : "Top 5 in view"}</span></div>
+    ${rows.length ? `<ol class="sl-list">${rows.map(item).join("")}</ol>` : `<p class="sl-empty">No places in view</p>`}
+    <button type="button" class="pdf-btn2 pdf-btn2--block" data-pdf-export><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download PDF</span><b class="pdf-n${ticked ? " is-on" : ""}">${ticked || Math.min(5, rows.length)}</b></button>`;
+}
+document.addEventListener("click", (event) => {
+  const x = event.target.closest?.("[data-untick]");
+  if (!x) return;
+  state.ticked.delete(String(x.dataset.untick));
+  renderListingRanking();
+});
 
 function shortlistRows() {
   if (state.ticked.size) {

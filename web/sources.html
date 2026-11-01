@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Data sources · Property Scanner</title>
+  <style>
+    :root { --ink: #1d1915; --muted: #6b625a; --line: #e6ddd1; --paper: #fffdf8; --bg: #f6f1ea; }
+    * { box-sizing: border-box; }
+    body { margin: 0; background: var(--bg); color: var(--ink); font: 14px/1.45 Inter, system-ui, -apple-system, "Segoe UI", sans-serif; }
+    .wrap { max-width: 1280px; margin: 0 auto; padding: 32px 24px 64px; }
+    .top { display: flex; align-items: baseline; justify-content: space-between; gap: 16px; flex-wrap: wrap; }
+    .eyebrow { margin: 0; font-size: 12px; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); }
+    h1 { margin: 4px 0 6px; font-size: 28px; }
+    .lead { margin: 0 0 20px; color: var(--muted); max-width: 760px; }
+    a { color: #4c1d95; }
+    .back { font-weight: 600; text-decoration: none; padding: 8px 14px; border-radius: 99px; background: var(--paper); border: 1px solid var(--line); }
+    .legend { display: flex; gap: 16px; flex-wrap: wrap; margin: 0 0 16px; color: var(--muted); font-size: 13px; }
+    .dot { display: inline-block; width: 10px; height: 10px; border-radius: 50%; margin-right: 6px; vertical-align: -1px; }
+    .ok { background: #1f7a45; } .due { background: #e8a317; } .old { background: #9b2335; } .live { background: #4c1d95; }
+    .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+    .filters button { font: inherit; padding: 6px 12px; border-radius: 99px; border: 1px solid var(--line); background: var(--paper); cursor: pointer; }
+    .filters button[aria-pressed="true"] { background: var(--ink); color: var(--paper); border-color: var(--ink); }
+    table { width: 100%; border-collapse: collapse; background: var(--paper); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    th, td { text-align: left; vertical-align: top; padding: 10px 12px; border-bottom: 1px solid var(--line); }
+    th { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); background: #fbf7f0; }
+    td.name { font-weight: 600; min-width: 150px; }
+    td .sub { display: block; font-weight: 400; color: var(--muted); font-size: 13px; }
+    .chip { display: inline-block; padding: 1px 8px; margin: 0 4px 4px 0; border-radius: 99px; background: #f1ebe2; font-size: 12px; white-space: nowrap; }
+    .status { white-space: nowrap; font-weight: 600; }
+    h2 { margin: 36px 0 10px; font-size: 20px; }
+    .gaps { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+    .card { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 14px 16px; }
+    .card h3 { margin: 0 0 6px; font-size: 16px; }
+    .card ul { margin: 0; padding-left: 18px; color: var(--muted); }
+    @media (max-width: 760px) {
+      .wrap { padding: 20px 14px 48px; }
+      h1 { font-size: 24px; }
+      table, tbody, tr, td { display: block; width: 100%; }
+      thead { display: none; }
+      table { background: none; border: 0; }
+      tr { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; margin-bottom: 12px; padding: 6px 0; }
+      td { border: 0; padding: 5px 14px; }
+      td[data-k]::before { content: attr(data-k); display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
+    }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <p class="eyebrow">Property Scanner</p>
+        <h1>Data sources</h1>
+      </div>
+      <a class="back" href="./">← Back to map</a>
+    </div>
+    <p class="lead">Every dataset behind the map and scores: where it comes from, which cities it covers, how old our copy is and how often to refresh it. Status compares the date we last pulled each dataset with the refresh cadence we recommend.</p>
+    <div class="legend">
+      <span><i class="dot ok"></i>Fresh</span><span><i class="dot due"></i>Refresh due</span><span><i class="dot old"></i>Overdue</span><span><i class="dot live"></i>Live, fetched on demand</span>
+    </div>
+    <div class="filters" id="filters"></div>
+    <table>
+      <thead><tr><th>Data</th><th>Cities</th><th>Source</th><th>Format</th><th>In our data</th><th>Publisher updates</th><th>We refresh</th><th>Status</th></tr></thead>
+      <tbody id="rows"></tbody>
+    </table>
+    <h2>What each city is missing compared with Madrid</h2>
+    <p class="lead">Scores skip missing signals and share their weight among the signals that exist. Nothing is filled in or estimated.</p>
+    <div class="gaps" id="gaps"></div>
+  </div>
+  <script>
+    const ALL = ["Madrid", "Barcelona", "Valencia", "Sevilla", "Zaragoza", "Málaga"];
+    const NEW4 = ["Valencia", "Sevilla", "Zaragoza", "Málaga"];
+    // pulled: date our copy was downloaded (YYYY-MM-DD). cadence: recommended refresh in days (0 = live).
+    const SOURCES = [
+      { name: "Commercial listings", what: "Premises for sale and rent: price, size, photos, agency", cities: ALL, src: "Idealista via Apify (igolaizola/idealista-scraper)", url: "https://apify.com/igolaizola/idealista-scraper", fmt: "JSON", period: "Madrid/Barcelona 1,343/900 · 50 sale + 50 rent per new city", pulled: { "Madrid": "2026-10-25", "Barcelona": "2026-10-25", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Continuous", cadence: 7 },
+      { name: "Madrid premises census", what: "Every street door: activity, open or closed", cities: ["Madrid"], src: "datos.madrid.es · Censo de locales y actividades", url: "https://datos.madrid.es/", fmt: "CSV", period: "16 Oct 2026", pulled: "2026-10-16", pub: "Monthly", cadence: 30 },
+      { name: "Barcelona premises census", what: "Ground-floor premises: activity, empty units for rent or sale", cities: ["Barcelona"], src: "Open Data BCN · Cens de locals en planta baixa", url: "https://opendata-ajuntament.barcelona.cat/data/es/dataset/cens-locals-planta-baixa-act-economica", fmt: "CSV", period: "2024 census", pulled: "2026-10-20", pub: "Every 2–3 years", cadence: 365 },
+      { name: "Shops (OpenStreetMap)", what: "Open shops, cafés, restaurants by type. No vacancy", cities: NEW4, src: "OpenStreetMap via Geofabrik extracts", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extract of 1 Nov 2026", pulled: "2026-11-01", pub: "Daily", cadence: 90 },
+      { name: "Neighbourhood boundaries", what: "Barrios (Madrid, Barcelona) and OSM barrios or districts (new cities)", cities: ALL, src: "datos.madrid.es · Open Data BCN · OpenStreetMap", url: "https://datos.madrid.es/", fmt: "GeoJSON / OSM PBF", period: "Current", pulled: "2026-11-01", pub: "Rarely", cadence: 365 },
+      { name: "Household income", what: "Net income per person and household by census section", cities: ALL, src: "INE · Atlas de distribución de renta de los hogares", url: "https://www.ine.es/dynt3/inebase/index.htm?padre=12385", fmt: "CSV", period: "Income year 2023 (Madrid, Barcelona) · 2024 (new cities)", pulled: "2026-11-01", pub: "Yearly (autumn)", cadence: 365 },
+      { name: "Census sections", what: "Section boundaries used to place listings in an income section", cities: ALL, src: "INE · Cartografía de secciones censales", url: "https://www.ine.es/ss/Satellite?L=es_ES&c=Page&cid=1259952026632&p=1259952026632&pagename=ProductosYServicios%2FPYSLayout", fmt: "Shapefile", period: "1 Jan 2024", pulled: "2026-10-31", pub: "Yearly", cadence: 365 },
+      { name: "Residents by age", what: "Population and age bands by barrio", cities: ["Madrid", "Barcelona"], src: "datos.madrid.es Padrón (dataset 200076) · Open Data BCN Padró", url: "https://datos.madrid.es/", fmt: "CSV", period: "2026", pulled: "2026-10-22", pub: "Monthly (Madrid) · yearly (Barcelona)", cadence: 180 },
+      { name: "Visitors (mobility)", what: "Daily trips into each district from elsewhere, weekday and Saturday", cities: ALL, src: "MITMA · Estudio de movilidad con big data", url: "https://www.transportes.gob.es/ministerio/proyectos-singulares/estudios-de-movilidad-con-big-data", fmt: "CSV (gz, S3)", period: "3 and 7 Jun 2025", pulled: "2026-11-01", pub: "Monthly, a few months behind", cadence: 180 },
+      { name: "Pedestrian counters", what: "People per day past fixed sensors", cities: ["Madrid"], src: "datos.madrid.es · Aforos peatonales (dataset 300321)", url: "https://datos.madrid.es/", fmt: "CSV", period: "Jan–Jun 2024", pulled: "2026-10-26", pub: "Half-yearly", cadence: 180 },
+      { name: "Loading bays (official)", what: "Reserved loading and unloading zones", cities: ["Madrid", "Barcelona", "Valencia"], src: "datos.madrid.es · Open Data BCN · Geoportal València", url: "https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/MapServer/178", fmt: "CSV / GeoJSON", period: "Current", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01" }, pub: "Irregular", cadence: 180 },
+      { name: "Parking, loading docks, schools, offices", what: "Points of interest near each listing", cities: ALL, src: "OpenStreetMap via Geofabrik", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extracts of 26 Oct and 1 Nov 2026", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Daily", cadence: 90 },
+      { name: "Transit stops and departures", what: "Metro and bus stops, Wednesday departures", cities: ["Madrid", "Barcelona"], src: "CRTM GTFS · EMT · TMB GTFS", url: "https://datos.crtm.es/", fmt: "GTFS / GeoJSON", period: "Timetables as of Oct 2026", pulled: "2026-10-20", pub: "Each timetable change", cadence: 90 },
+      { name: "Floor area and retail floor", what: "Gross built floor and retail-use floor per barrio", cities: ["Madrid", "Barcelona"], src: "Catastro · INSPIRE buildings", url: "https://www.catastro.hacienda.gob.es/webinspire/index.html", fmt: "GML (zip)", period: "2026", pulled: "2026-10-20", pub: "Every 6 months", cadence: 365 },
+      { name: "Road traffic", what: "Vehicles per hour at traffic sensors", cities: ["Madrid"], src: "datos.madrid.es · Tráfico en tiempo real", url: "https://datos.madrid.es/", fmt: "XML / CSV", period: "Snapshot, Oct 2026", pulled: "2026-10-20", pub: "Every 5 minutes", cadence: 90 },
+      { name: "Yield benchmarks", what: "Prime and typical retail yields used in the deal calculator", cities: ALL, src: "CBRE, Colliers, idealista reports", url: "https://www.idealista.com/sala-de-prensa/informes-precio-vivienda/", fmt: "Report (PDF/web)", period: "Q3 2026", pulled: "2026-10-13", pub: "Quarterly", cadence: 90 },
+      { name: "Nearby businesses (live)", what: "Shops around a listing when you open it", cities: ALL, src: "Google Places API (New)", url: "https://developers.google.com/maps/documentation/places/web-service", fmt: "API", period: "On demand", pulled: null, pub: "Live", cadence: 0 },
+      { name: "10-minute walk (live)", what: "Walking catchment around a listing", cities: ALL, src: "OpenRouteService isochrones", url: "https://openrouteservice.org/", fmt: "API", period: "On demand", pulled: null, pub: "Live", cadence: 0 },
+    ];
+    const GAPS = {
+      Madrid: ["Reference city: every signal available"],
+      Barcelona: ["Pedestrian counters", "Road traffic"],
+      Valencia: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Road traffic"],
+      Sevilla: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Loading bays (none published, none in OSM)", "Road traffic"],
+      Zaragoza: ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Official loading bays (city API not reachable; OSM only)", "Road traffic"],
+      "Málaga": ["Vacancy census (no empty-doors signal)", "Official shop census (OSM instead)", "Pedestrian counters", "Transit departures", "Retail floor (cadastre)", "Residents by age bands", "Loading bays (none published, none in OSM)", "Road traffic", "Areas are 11 districts, not barrios"],
+    };
+    const today = new Date();
+    const fmtDate = (d) => new Date(d + "T12:00:00").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" });
+    const cadenceText = (c) => (c === 0 ? "Live" : c <= 7 ? "Weekly" : c <= 31 ? "Monthly" : c <= 92 ? "Quarterly" : c <= 183 ? "Every 6 months" : "Yearly");
+    function status(s, city) {
+      if (!s.cadence) return ["live", "Live"];
+      const p = typeof s.pulled === "string" ? s.pulled : city ? s.pulled[city] : Object.values(s.pulled).sort()[0];
+      if (!p) return ["live", "—"];
+      const age = (today - new Date(p + "T12:00:00")) / 864e5;
+      return age <= s.cadence ? ["ok", "Fresh"] : age <= 2 * s.cadence ? ["due", "Refresh due"] : ["old", "Overdue"];
+    }
+    const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+    let city = "All";
+    function render() {
+      const rows = SOURCES.filter((s) => city === "All" || s.cities.includes(city));
+      document.getElementById("rows").innerHTML = rows.map((s) => {
+        const [cls, label] = status(s, city === "All" ? null : city);
+        const pulled = s.pulled == null ? "—" : typeof s.pulled === "string" ? fmtDate(s.pulled) : city !== "All" && s.pulled[city] ? fmtDate(s.pulled[city]) : [...new Set(Object.values(s.pulled))].sort().map(fmtDate).join(" / ");
+        return `<tr>
+          <td class="name" data-k="Data">${esc(s.name)}<span class="sub">${esc(s.what)}</span></td>
+          <td data-k="Cities">${s.cities.length === ALL.length ? '<span class="chip">All six</span>' : s.cities.map((c) => `<span class="chip">${c}</span>`).join("")}</td>
+          <td data-k="Source"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.src)}</a></td>
+          <td data-k="Format">${esc(s.fmt)}</td>
+          <td data-k="In our data">${esc(s.period)}<span class="sub">Pulled ${pulled}</span></td>
+          <td data-k="Publisher updates">${esc(s.pub)}</td>
+          <td data-k="We refresh">${cadenceText(s.cadence)}</td>
+          <td data-k="Status" class="status"><i class="dot ${cls}"></i>${label}</td>
+        </tr>`;
+      }).join("");
+      document.querySelectorAll("#filters button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.c === city)));
+    }
+    document.getElementById("filters").innerHTML = ["All", ...ALL].map((c) => `<button type="button" data-c="${c}">${c}</button>`).join("");
+    document.getElementById("filters").addEventListener("click", (e) => { const b = e.target.closest("button"); if (b) { city = b.dataset.c; render(); } });
+    document.getElementById("gaps").innerHTML = ALL.map((c) => `<div class="card"><h3>${c}</h3><ul>${GAPS[c].map((g) => `<li>${esc(g)}</li>`).join("")}</ul></div>`).join("");
+    render();
+  </script>
+</body>
+</html>

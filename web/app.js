@@ -2402,6 +2402,19 @@ function listingCard(props, { wrap = true } = {}) {
 }
 
 /** Map hover card for a listing: photo, score badge, price, size, €/m² and up to three signal tags. */
+/** Median €/m² of listings in the same area and operation (falls back to city), cached per data load. */
+const _pm2Cache = new Map();
+function areaMedianPm2(props) {
+  const key = `${props.i || props.m}|${props.op}|${state.listings?.length || 0}`;
+  if (_pm2Cache.has(key)) return _pm2Cache.get(key);
+  const pick = (f) => (state.listings || []).map((x) => x.properties).filter((q) => q.op === props.op && q.p && q.sz && f(q)).map((q) => q.p / q.sz).sort((a, b) => a - b);
+  let v = props.i ? pick((q) => q.i === props.i) : [];
+  if (v.length < 4) v = pick((q) => q.m === props.m);
+  const med = v.length >= 4 ? v[Math.floor(v.length / 2)] : null;
+  _pm2Cache.set(key, med);
+  return med;
+}
+
 function listingHoverHtml(props) {
   const rank = listingRank(props);
   const pct = Number.isFinite(rank?.pct) ? Math.round(rank.pct) : null;
@@ -2416,6 +2429,17 @@ function listingHoverHtml(props) {
   if (o.pk && o.pk[1] != null && o.pk[1] <= 300) tags.push(["parking", `${o.pk[1]} m`, "Nearest public car park"]);
   if (o.mv && tags.length < 3) tags.push(["trips", `${formatNumber(Math.round(o.mv[1] / 1000))}k trips`, "Weekday visitors into the district"]);
   const op = props.op === "rent" ? "For rent" : "For sale";
+  const inv = props.inv || {};
+  const facts = [];
+  const floor = inv.floor ? String(inv.floor).replace(/ floor$/i, "") : "";
+  if (floor) facts.push(["Floor", floor]);
+  if (inv.storefront || inv.location_type) facts.push(["Front", String(inv.storefront || inv.location_type).replace(/^Street level$/i, "Street")]);
+  if (inv.energy_class) facts.push(["Energy", String(inv.energy_class).toUpperCase() === "EXEMPT" ? "Exempt" : String(inv.energy_class).toUpperCase()]);
+  if (Number.isFinite(inv.days_on_market)) facts.push(["Listed", inv.days_on_market < 1 ? "New" : `${inv.days_on_market} d`]);
+  const med = areaMedianPm2(props);
+  let vs = "";
+  if (pm2 && med) { const d = Math.round((pm2 / med - 1) * 100); vs = Math.abs(d) < 5 ? "≈ area €/m²" : `${d > 0 ? "+" : "−"}${Math.abs(d)}% vs area €/m²`; }
+  const strong = (rank?.parts || []).filter((q) => Number.isFinite(q.value) && q.value >= 0.7).sort((a, b) => b.value - a.value).slice(0, 2).map((q) => String(q.label || "").replace(/ \(.+\)$/, "")).filter(Boolean);
   const place = [props.n, props.d && props.d !== props.n ? props.d : "", props.m].filter(Boolean).slice(0, 2).join(" · ");
   return `<div class="hc">
     <div class="hc__img">${thumb ? `<img class="is-loading" src="${escapeHtml(thumb)}" alt="" decoding="async" fetchpriority="high" />` : `<span class="hc__noimg">${pdfIcon("store")}</span>`}
@@ -2426,6 +2450,8 @@ function listingHoverHtml(props) {
       <div class="hc__price">${props.p ? formatEuro(props.p) : "—"}${props.op === "rent" ? "<small>/mo</small>" : ""}</div>
       <div class="hc__facts">${props.sz ? `<span>${formatNumber(props.sz)} m²</span>` : ""}${pm2 ? `<span>${formatNumber(pm2)} €/m²</span>` : ""}</div>
       ${place ? `<div class="hc__place">${PIN_ICON}<span>${escapeHtml(place)}</span></div>` : ""}
+      ${facts.length ? `<div class="hc__kv">${facts.slice(0, 4).map(([k, v]) => `<span><small>${k}</small>${escapeHtml(v)}</span>`).join("")}</div>` : ""}
+      ${vs || strong.length ? `<div class="hc__more">${vs ? `<span class="hc__vs${vs.startsWith("−") ? " is-good" : vs.startsWith("+") ? " is-high" : ""}">${escapeHtml(vs)}</span>` : ""}${strong.length ? `<span class="hc__str">Strong: ${escapeHtml(strong.join(", "))}</span>` : ""}</div>` : ""}
       ${tags.length ? `<div class="hc__tags">${tags.slice(0, 3).map(([i, v, t]) => `<span title="${escapeHtml(t)}">${pdfIcon(i)}${escapeHtml(v)}</span>`).join("")}</div>` : ""}
     </div>
   </div>`;
@@ -3665,6 +3691,7 @@ map.on("click", (event) => {
     // MapLibre flattens nested feature properties to JSON strings (inv, x), so the
     // card must use the original listing object, not the rendered feature's props.
     const full = state.listingById.get(listing.properties.id);
+    if (state.choosing) { toggleTick(String(listing.properties.id)); return; }
     if (full) openListingById(full.properties.id);
     else openListingDetail(listing.properties, listing.geometry.coordinates);
     return;
@@ -3852,8 +3879,9 @@ document.addEventListener("pointerover", (event) => {
   const styles = document.querySelector(".map-toolbar--styles");
   const desk = window.matchMedia("(min-width: 1025px)");
   if (!colour || !styles || !window.ResizeObserver) return;
-  const place = () => { styles.style.top = desk.matches ? `${colour.offsetHeight + 8}px` : ""; };
-  new ResizeObserver(place).observe(colour);
+  // Round 29: map style switcher sits ABOVE the colour box.
+  const place = () => { styles.style.top = desk.matches ? "0px" : ""; colour.style.top = desk.matches ? `${styles.offsetHeight + 8}px` : ""; };
+  new ResizeObserver(place).observe(styles);
   desk.addEventListener("change", place);
   place();
 })();
@@ -4091,9 +4119,45 @@ function renderPdfBar() {
   const n = state.ticked.size;
   let dflt = 5; try { dflt = shortlistRows().length; } catch {}
   const dl = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
+  bar.hidden = !state.choosing;
+  bar.innerHTML = state.choosing ? `<span class="choose-banner"><b>${n}</b> selected for the PDF<button type="button" class="choose-done" data-choose-done>Done</button></span>` : "";
+  renderShortlistCard();
+  syncTickMarkers();
+  return;
   bar.innerHTML = `<button type="button" class="pdf-btn2" data-pdf-export title="Export a PDF shortlist">${dl}<span>Shortlist PDF</span><b class="pdf-n${n ? " is-on" : ""}">${n || dflt}</b></button><span class="pdf-sub">${n ? "ticked" : `top ${dflt}`}</span>${n ? `<button type="button" class="pdf-x" data-pdf-clear title="Untick all" aria-label="Untick all">×</button>` : ""}`;
   renderShortlistCard();
 }
+
+function toggleTick(id) {
+  if (state.ticked.has(id)) state.ticked.delete(id); else state.ticked.add(id);
+  renderListingRanking();
+}
+function setChoosing(on) {
+  state.choosing = on;
+  document.body.classList.toggle("choosing", on);
+  if (on && !state.ticked.size) { try { shortlistRows().forEach((r) => state.ticked.add(String(r.id ?? r.props?.id))); } catch {} }
+  if (on && document.body.classList.contains("right-closed")) document.getElementById("rpanel-rail")?.click();
+  if (on) document.querySelector('[data-sheet-tab="listings"]')?.click();
+  renderListingRanking();
+}
+let _tickMarkers = [];
+function syncTickMarkers() {
+  _tickMarkers.forEach((m) => m.remove()); _tickMarkers = [];
+  if (!state.choosing || typeof maplibregl === "undefined") return;
+  for (const id of state.ticked) {
+    const f = state.listingById?.get(id);
+    if (!f) continue;
+    const el = document.createElement("button");
+    el.type = "button"; el.className = "tick-pin"; el.setAttribute("aria-label", "Remove from PDF");
+    el.innerHTML = `<svg viewBox="0 0 24 24" width="12" height="12" aria-hidden="true"><path d="M5 12l5 5 9-10" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    el.addEventListener("click", (e) => { e.stopPropagation(); toggleTick(id); });
+    _tickMarkers.push(new maplibregl.Marker({ element: el }).setLngLat(f.geometry.coordinates).addTo(map));
+  }
+}
+document.addEventListener("click", (event) => {
+  if (event.target.closest("[data-choose]")) setChoosing(!state.choosing);
+  else if (event.target.closest("[data-choose-done]")) setChoosing(false);
+});
 
 /** Left panel: the places ticked so far (or the current top 5), one tap to open, plus the PDF button. */
 function renderShortlistCard() {
@@ -4109,7 +4173,8 @@ function renderShortlistCard() {
   };
   box.innerHTML = `<div class="sl-head"><span class="sl-title">Your shortlist</span><span class="sl-count">${ticked ? `${ticked} ticked` : "Top 5 in view"}</span></div>
     ${rows.length ? `<ol class="sl-list">${rows.map(item).join("")}</ol>` : `<p class="sl-empty">No places in view</p>`}
-    <button type="button" class="pdf-btn2 pdf-btn2--block" data-pdf-export><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download PDF</span><b class="pdf-n${ticked ? " is-on" : ""}">${ticked || Math.min(5, rows.length)}</b></button>`;
+    <div class="sl-actions"><button type="button" class="pdf-btn2 pdf-btn2--block" data-pdf-export><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download PDF</span><b class="pdf-n${ticked ? " is-on" : ""}">${ticked || Math.min(5, rows.length)}</b></button><button type="button" class="sl-choose${state.choosing ? " is-on" : ""}" data-choose aria-pressed="${!!state.choosing}">${state.choosing ? "Done" : "Choose"}</button></div>
+    ${state.choosing ? `<p class="sl-hint">Tick places in the list or tap pins on the map</p>` : ""}`;
 }
 document.addEventListener("click", (event) => {
   const x = event.target.closest?.("[data-untick]");

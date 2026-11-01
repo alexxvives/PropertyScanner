@@ -1,0 +1,21 @@
+{
+  "actor": "igolaizola/idealista-scraper",
+  "monthly_budget_usd": 5.0,
+  "safety_margin": 0.15,
+  "price_usd": { "actor_start": 0.005, "result": 0.0009, "fetch_detail": 0.0009, "fetch_stats": 0.0009 },
+  "fetch_details": true,
+  "fetch_stats": false,
+  "memory_mb": 1024,
+  "timeout_s": 900,
+  "_measured": "24 real runs (Oct 24 to Nov 1 2026): 24 starts, 2675 results, 2675 details, 505 stats = $5.39, matches these prices",
+  "jobs": [
+    { "city": "mad", "location": "Madrid",    "every_days": 7,  "max_items": 80, "publication_date": "W" },
+    { "city": "bcn", "location": "Barcelona", "every_days": 7,  "max_items": 80, "publication_date": "W" },
+    { "city": "vlc", "location": "Valencia",  "every_days": 14, "max_items": 50, "publication_date": "M" },
+    { "city": "svq", "location": "Sevilla",   "every_days": 14, "max_items": 50, "publication_date": "M" },
+    { "city": "zgz", "location": "Zaragoza",  "every_days": 14, "max_items": 50, "publication_date": "M" },
+    { "city": "agp", "location": "Málaga",    "every_days": 14, "max_items": 50, "publication_date": "M" }
+  ],
+  "operations": ["sale", "rent"],
+  "state_file": "data/raw/apify_refresh_state.json"
+}

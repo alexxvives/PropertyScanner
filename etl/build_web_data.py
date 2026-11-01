@@ -26,7 +26,7 @@ BUILD = ROOT / "data" / "build"
 WEB = ROOT / "web"
 OUT = WEB / "data"
 RADIUS_M = 300
-CITY = {"Madrid": "mad", "Barcelona": "bcn"}
+CITY = {"Madrid": "mad", "Barcelona": "bcn", "Zaragoza": "zgz", "València": "vlc", "Valencia": "vlc", "Sevilla": "svq", "Málaga": "agp"}
 # heavy text the list does not need; it stays in the detail file
 INV_DROP = {"desc_es", "desc_en", "desc_ca", "desc_kind", "features", "admin_levels", "energy", "labels",
             "phone", "contact_name", "location_code", "listing_code", "media", "title_en", "photo_tags"}

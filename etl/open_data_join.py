@@ -9,6 +9,10 @@ Sources (downloaded into data/raw/r19/, which is gitignored):
   ine_31097_city.csv / ine_30896_city.csv   INE household income atlas by census section (Madrid / Barcelona)
   ine_31105_city.csv / ine_30904_city.csv   INE atlas demographic indicators by census section
   secc/SECC_CE_20240101.*                   INE census section boundaries 2024
+  ine_{31277,31250,31205,31106}_city.csv    INE income atlas for Zaragoza / Valencia / Sevilla / Malaga (+8 for demographics)
+  ../r25/osm_{zgz,vlc,svq,agp}.json         OSM points for the Round 25 cities (etl/osm_cities.py)
+  ../r25/vlc_cd.geojson                     Valencia loading bays, geoportal.valencia.es Trafico layer 178
+Sevilla and Malaga have no loading-bay source (official or OSM), so their "ld" is left out rather than 0.
 
 Per listing:
   ped: [people per day, metres, counter address]   nearest Madrid counter within 600 m
@@ -120,7 +124,7 @@ def sections():
     r = shapefile.Reader(str(base))
     geoms, codes = [], []
     for sr in r.iterShapeRecords():
-        if sr.record["CUMUN"] in ("28079", "08019"):
+        if sr.record["CUMUN"] in ("28079", "08019", "50297", "46250", "41091", "29067"):
             geoms.append(shape(sr.shape.__geo_interface__))
             codes.append(sr.record["CUSEC"])
     return STRtree(geoms), geoms, codes
@@ -169,6 +173,15 @@ def main():
     by = defaultdict(list)
     for k, lon, lat, cap in osm:
         by[k].append((k, lon, lat, cap))
+    for c in ("zgz", "vlc", "svq", "agp"):
+        f = RAW.parent / "r25" / f"osm_{c}.json"
+        if f.exists():
+            for k, lon, lat, cap in json.loads(f.read_text())["pts"]:
+                by[k].append((k, lon, lat, cap))
+    if (RAW.parent / "r25" / "vlc_cd.geojson").exists():
+        for ft in json.loads((RAW.parent / "r25" / "vlc_cd.geojson").read_text())["features"]:
+            lon, lat = ft["geometry"]["coordinates"][:2]
+            by["load"].append(("load", lon, lat, None))
     if (RAW / "mad_cd.csv").exists():
         with (RAW / "mad_cd.csv").open(encoding="latin-1") as h:
             for r in csv.DictReader(h, delimiter=";"):
@@ -191,7 +204,8 @@ def main():
             except (ValueError, KeyError):
                 pass
     grids = {k: grid_of(v) for k, v in by.items() if k != "load_bcn"}
-    ine = ine_rows("ine_31097_city.csv", "ine_30896_city.csv", "ine_31105_city.csv", "ine_30904_city.csv")
+    ine = ine_rows("ine_31097_city.csv", "ine_30896_city.csv", "ine_31105_city.csv", "ine_30904_city.csv",
+                   *(f"ine_{n}_city.csv" for n in (31277, 31285, 31250, 31258, 31205, 31213, 31106, 31114)))
     sec = sections()
     to_utm = Transformer.from_crs(4326, 25830, always_xy=True)
     mitma = mitma_districts()
@@ -209,7 +223,8 @@ def main():
             pk = near(grids.get("park", {}), lon, lat, 300)
             row["pk"] = [len(pk), round(min(d for d, _ in pk)) if pk else None, sum(q[3] or 0 for _, q in pk)]
             ld = near(grids.get("load", {}), lon, lat, 300)
-            row["ld"] = [sum(1 for d, _ in ld if d <= 100), round(min(d for d, _ in ld)) if ld else None]
+            if p.get("m") not in ("Sevilla", "Málaga"):
+                row["ld"] = [sum(1 for d, _ in ld if d <= 100), round(min(d for d, _ in ld)) if ld else None]
             row["sc"] = len(near(grids.get("school", {}), lon, lat, 400))
             row["of"] = len(near(grids.get("office", {}), lon, lat, 400))
             stats["osm"] += 1

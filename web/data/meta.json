@@ -15,10 +15,42 @@
       "places": 64737,
       "areas": 73,
       "note": "Ground-floor premises. Empty units are marked for rent, for sale, or both."
+    },
+    {
+      "id": "zgz",
+      "name": "Zaragoza",
+      "vintage": "OpenStreetMap",
+      "places": 6851,
+      "areas": 16,
+      "note": "Shops from OpenStreetMap (open businesses only, no vacancy census). Areas are OSM barrios or districts."
+    },
+    {
+      "id": "vlc",
+      "name": "Valencia",
+      "vintage": "OpenStreetMap",
+      "places": 5663,
+      "areas": 86,
+      "note": "Shops from OpenStreetMap (open businesses only, no vacancy census). Areas are OSM barrios or districts."
+    },
+    {
+      "id": "svq",
+      "name": "Sevilla",
+      "vintage": "OpenStreetMap",
+      "places": 5505,
+      "areas": 103,
+      "note": "Shops from OpenStreetMap (open businesses only, no vacancy census). Areas are OSM barrios or districts."
+    },
+    {
+      "id": "agp",
+      "name": "Málaga",
+      "vintage": "OpenStreetMap",
+      "places": 4039,
+      "areas": 13,
+      "note": "Shops from OpenStreetMap (open businesses only, no vacancy census). Areas are OSM barrios or districts."
     }
   ],
-  "places": 186398,
-  "areas": 204,
+  "places": 208456,
+  "areas": 422,
   "groups": {
     "food": 18080,
     "cafe": 6513,
@@ -45,12 +77,20 @@
     "barcelona": 0
   },
   "idealistaListings": {
-    "total": 2243,
+    "total": 2643,
     "counts": {
+      "málaga_rent": 50,
+      "málaga_sale": 50,
       "barcelona_rent": 450,
       "barcelona_sale": 450,
       "madrid_rent": 671,
-      "madrid_sale": 672
+      "madrid_sale": 672,
+      "sevilla_rent": 50,
+      "sevilla_sale": 50,
+      "valència_rent": 50,
+      "valència_sale": 50,
+      "zaragoza_rent": 50,
+      "zaragoza_sale": 50
     },
     "operation": [
       "sale",

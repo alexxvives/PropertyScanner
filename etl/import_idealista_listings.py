@@ -70,6 +70,33 @@ def listing_code(item: dict) -> str:
     return str(item.get("propertyCode") or "").strip()
 
 
+def from_details(item: dict) -> dict:
+    """Code-only rows (Apify propertyCodes fetch) carry just _details: rebuild the search-row fields."""
+    d = item.get("_details") or {}
+    u = d.get("ubication") or {}
+    mc = d.get("moreCharacteristics") or {}
+    code = str(item.get("propertyCode") or d.get("adid") or "")
+    size = mc.get("constructedArea") or mc.get("usableArea") or 0
+    price = d.get("price") or (d.get("priceInfo") or {}).get("amount") or 0
+    imgs = ((d.get("multimedia") or {}).get("images") or [])
+    strip = lambda v, w: str(v or "").replace(w, "", 1).strip()
+    out = {
+        "propertyCode": code, "latitude": u.get("latitude"), "longitude": u.get("longitude"),
+        "price": price, "size": size, "priceByArea": round(price / size) if price and size else None,
+        "operation": d.get("operation"), "propertyType": d.get("propertyType"),
+        "address": u.get("title") or "", "municipality": u.get("administrativeAreaLevel2") or "",
+        "district": strip(u.get("administrativeAreaLevel3"), "District"),
+        "neighborhood": strip(u.get("administrativeAreaLevel4"), "Subdistrict"),
+        "province": strip(str(u.get("administrativeAreaLevel1") or "").split(",")[-1], ""),
+        "locationId": u.get("locationId"), "url": f"https://www.idealista.com/inmueble/{code}/",
+        "description": d.get("propertyComment") or "", "thumbnail": (imgs[0].get("url") if imgs else ""),
+        "numPhotos": len(imgs), "state": d.get("state"), "status": mc.get("status"),
+        "suggestedTexts": d.get("suggestedTexts") or {}, "detailedType": d.get("detailedType") or {},
+        "contactInfo": d.get("contactInfo") or {}, "priceInfo": {"price": {"amount": price}},
+    }
+    return {**{k: v for k, v in out.items() if v not in (None, "")}, **item}
+
+
 def load_merged_items() -> list[dict]:
     """Merge every premises raw export (any city, sale + rent); dedupe by propertyCode (richest row wins)."""
     raw_dir = ROOT / "data" / "raw"
@@ -83,15 +110,34 @@ def load_merged_items() -> list[dict]:
     if not paths:
         raise SystemExit(f"Missing raw Idealista JSON under {raw_dir} (or {RAW})")
 
+    # Oldest file first, so a newer scrape wins ties; a newer search-only row (no details,
+    # from the cheap Apify sweep) still updates the price of the richer older row.
+    paths.sort(key=lambda p: (p.stat().st_mtime, p.name))
+    delisted = json.loads(DELISTED.read_text()) if DELISTED.exists() else {}
     by_id: dict[str, dict] = {}
     for path in paths:
         for item in load_items_from_path(path):
             code = listing_code(item)
-            if not code:
+            if not code or code in delisted:
                 continue
             prev = by_id.get(code)
+            if "longitude" not in item and item.get("_details"):
+                if prev is not None:   # re-check of a known listing: keep its search row, take fresh details + price
+                    det = item["_details"]
+                    prev["_details"] = det
+                    if det.get("price"):
+                        prev["price"] = det["price"]
+                        if prev.get("size"):
+                            prev["priceByArea"] = round(det["price"] / prev["size"])
+                    prev["state"] = det.get("state") or prev.get("state")
+                    continue
+                item = from_details(item)
             if prev is None or item_richness(item) >= item_richness(prev):
                 by_id[code] = item
+            else:
+                for k in ("price", "priceByArea", "priceInfo"):
+                    if item.get(k) is not None:
+                        prev[k] = item[k]
     return list(by_id.values())
 
 
@@ -630,6 +676,9 @@ def listing_detail(item: dict) -> dict:
 # ---------------------------------------------------------------------------
 
 FIRST_SEEN = ROOT / "etl" / "listing_first_seen.json"
+LAST_SEEN = ROOT / "etl" / "listing_last_seen.json"   # written by etl/apify_refresh.py
+DELISTED = ROOT / "etl" / "listing_delisted.json"
+_LAST = json.loads(LAST_SEEN.read_text()) if LAST_SEEN.exists() else {}
 
 FLOOR_LABELS = {
     "bj": "Ground floor", "st": "Basement", "ss": "Semi-basement",
@@ -727,6 +776,7 @@ def curate_listing(props: dict, detail: dict, first_seen: dict[str, str], today:
         "link": props.get("u") or "",
         "photos": (detail.get("imgs") or ([detail["thumb"]] if detail.get("thumb") else []))[:16],
         "first_seen": seen,
+        "last_seen": _LAST.get(code) or seen,
         "days_on_market": days,
         "price_drop": (
             f"{detail['priceDropPct']}%" + (f" (−{detail['priceDropVal']} €)" if detail.get("priceDropVal") else "")
@@ -911,7 +961,7 @@ def recurate_existing() -> None:
 
 INVESTOR_FIELDS = [
     "price", "size_m2", "price_m2", "location", "floor", "storefront", "condition",
-    "current_use", "link", "photos", "first_seen", "days_on_market", "price_drop",
+    "current_use", "link", "photos", "first_seen", "last_seen", "days_on_market", "price_drop",
     "community_costs_month", "energy_class", "agency", "phone",
     "contact_name", "agency_logo", "agency_ref", "advertiser_type", "currency", "country",
     "admin_levels", "location_code", "listing_code", "state", "updated_ms", "activity",

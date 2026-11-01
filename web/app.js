@@ -1133,6 +1133,7 @@ function renderListingRanking() {
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}${listingOutlier(item.props) ? `<span class="row-tag row-tag--warn" title="${escapeHtml(listingOutlier(item.props))}">⚠ outlier</span>` : ""}</span>
+        ${updatedAgoHtml(item.props, "upd--row")}
         <span class="score-bar-wrap">${tev ? scoreBarHtml(item.rank.pct, `${state.tenant.name} score ${item.rank.raw}/100 · rank ${item.rank.pct}`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text)}</span>
       </button></li>`;
         })
@@ -2064,6 +2065,7 @@ function listingModalContent(props) {
     <div class="ltop">
       ${listingHeroHtml(images, props.u)}
       ${kpis}
+      ${updatedAgoHtml(props)}
     </div>
     <nav class="lnav" role="tablist" aria-label="Card sections">
       ${tab("sec-why", "Why", true)}
@@ -2304,6 +2306,15 @@ function areaModalContent(props) {
       <div class="visit-live fit-subsection fit-subsection--walk"><p class="live-note">Drawing the 10-minute walk…</p></div>
     </section>
   </article>`;
+}
+
+/** Discreet "Updated N days ago" from the last date the scraper confirmed the listing live. */
+function updatedAgoHtml(props, cls = "") {
+  const d = props?.inv?.last_seen || props?.inv?.first_seen;
+  if (!d) return "";
+  const days = Math.max(0, Math.round((Date.now() - new Date(`${d}T12:00:00`).getTime()) / 864e5));
+  const txt = days === 0 ? "Updated today" : days === 1 ? "Updated yesterday" : `Updated ${days} days ago`;
+  return `<span class="upd ${cls}" title="Last checked on Idealista: ${escapeHtml(d)}">${txt}</span>`;
 }
 
 function openListingDetail(props, coordinates) {

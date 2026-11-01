@@ -77,20 +77,20 @@
     "barcelona": 0
   },
   "idealistaListings": {
-    "total": 2643,
+    "total": 3119,
     "counts": {
-      "málaga_rent": 50,
-      "málaga_sale": 50,
-      "barcelona_rent": 450,
-      "barcelona_sale": 450,
-      "madrid_rent": 671,
-      "madrid_sale": 672,
-      "sevilla_rent": 50,
-      "sevilla_sale": 50,
-      "valència_rent": 50,
-      "valència_sale": 50,
-      "zaragoza_rent": 50,
-      "zaragoza_sale": 50
+      "madrid_sale": 662,
+      "barcelona_rent": 446,
+      "barcelona_sale": 444,
+      "madrid_rent": 667,
+      "zaragoza_rent": 100,
+      "sevilla_rent": 100,
+      "málaga_sale": 100,
+      "sevilla_sale": 100,
+      "zaragoza_sale": 100,
+      "valència_rent": 150,
+      "valència_sale": 150,
+      "málaga_rent": 100
     },
     "operation": [
       "sale",
@@ -137,6 +137,7 @@
       "typology",
       "ubic",
       "ubicKey",
+      "urgentHighlight",
       "userType",
       "visualHighlight"
     ],

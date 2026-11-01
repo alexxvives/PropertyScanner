@@ -62,3 +62,23 @@ notary + registry (1.5%), capex, vacancy and opex. Market rent is the median €
 listings (`op: "rent"`) within 800 m when at least 3 exist; otherwise a clearly flagged
 assumption (16 €/m² Madrid, 18 €/m² Barcelona). Outputs: €/m², gross/net rent, all-in cost,
 gross yield, net yield, payback years.
+
+## Weekly listing refresh (Apify, budget-capped)
+
+One command, run from the repo root with `APIFY_TOKEN` set in the environment (it is never printed):
+
+```bash
+scripts/weekly_refresh.sh            # optional: MAX_USD=1.00 (default) caps this run's spend
+```
+
+What it does:
+
+1. **Usage check.** It reads the real Apify usage and limit for the current cycle. The cap is the lower of `MAX_USD` and (limit − $0.75 headroom, which is 15% of the $5 monthly plan − usage). If the cap is below $0.05 it prints "nothing spent" and exits 0 without rebuilding or deploying.
+2. **Smart refresh** (`etl/apify_refresh.py --run`), in this order:
+   - **Cheap sweep.** For any city/type below 150 listings, it runs one search-results pass without details ($0.0009 per result), at most once every 6 days. This confirms which listings are still live, picks up price changes and finds new codes. If a sweep returns fewer results than it asked for, known listings missing from it are marked as delisted.
+   - **Stale re-check.** It ranks the other listings by days since last confirmed, then days on market, then price drops, then cheap €/m² for the area, and fetches the top ones by code ($0.0018 each). Removed ads come back "ad not found" and are free; they go into `etl/listing_delisted.json` and disappear from the site.
+   - **New listings.** It fetches details only for new codes, thinnest city/type first, up to 150 per city/type.
+3. **Rebuild.** Runs `etl/import_idealista_listings.py` then `etl/build_web_data.py`. Each card shows "Updated N days ago", taken from `etl/listing_last_seen.json`.
+4. **Commit, push and deploy.** It commits the refreshed data to the current branch, pushes it and runs `wrangler deploy`. It never merges.
+
+`python3 etl/apify_refresh.py` with no flags is a dry run that spends nothing, and `--usage` only reads usage. New raw files land in `data/raw/` (gitignored).

@@ -3044,3 +3044,8 @@ body.choosing .has-tick .tick { display: flex !important; }
 .hc__more { display: flex; flex-wrap: wrap; gap: 4px 8px; margin-top: 5px; font-size: 11.5px; color: #475569; }
 .hc__vs { font-weight: 700; }
 .hc__vs.is-good { color: #047857; } .hc__vs.is-high { color: #b45309; }
+
+/* ---- Round 30: last-scraped label ---- */
+.upd { display: block; font-size: 10.5px; font-weight: 500; color: #94a3b8; letter-spacing: .01em; }
+.upd--row { margin: 1px 0 2px; }
+.ltop .upd { text-align: right; padding: 4px 2px 0; }

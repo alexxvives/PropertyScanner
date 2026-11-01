@@ -181,6 +181,44 @@ def clip_to_municipality(features: list) -> list:
     return kept
 
 
+CITY_NAMES = {"mad": "Madrid", "bcn": "Barcelona", "vlc": "Valencia", "svq": "Sevilla", "zgz": "Zaragoza", "agp": "Málaga"}
+# Coverage per data source: (unit, test). "l" = listings (test on props), "a" = neighbourhoods (test on area props).
+COVERAGE = {
+    "listings_photo": ("l", lambda p: bool((p.get("x") or {}).get("thumb"))),
+    "premises_census": ("a", lambda a: a.get("vacant") is not None),
+    "osm_shops": ("a", lambda a: bool(a.get("open"))),
+    "boundaries": ("a", lambda a: True),
+    "income": ("a", lambda a: a.get("income_eur") is not None),
+    "census_section": ("l", lambda p: bool((p.get("od") or {}).get("sec"))),
+    "age": ("a", lambda a: bool(a.get("age_bands"))),
+    "mobility": ("l", lambda p: bool((p.get("od") or {}).get("mv"))),
+    "pedestrians": ("l", lambda p: bool((p.get("od") or {}).get("ped")) and p["od"]["ped"][1] <= 250),
+    "loading": ("l", lambda p: bool((p.get("od") or {}).get("ld")) and p["od"]["ld"][1] is not None),
+    "osm_points": ("l", lambda p: bool((p.get("od") or {}).get("pk")) and (p["od"]["pk"][0] or 0) > 0),
+    "transit": ("a", lambda a: bool(a.get("bus_stops") or a.get("metro_stops"))),
+    "floor": ("a", lambda a: bool(a.get("retail_m2"))),
+    "traffic": ("a", lambda a: a.get("traffic_veh_h") is not None),
+}
+
+
+def write_coverage(files: dict) -> None:
+    """data/coverage.json: for each source, how many listings or neighbourhoods per city actually carry it."""
+    areas = json.loads((OUT / "areas.geojson").read_text())["features"]
+    by_city_l = defaultdict(list)
+    for name, feats in files.items():
+        by_city_l[CITY_NAMES[name.split("-")[1]]] += [f["properties"] for f in feats]
+    by_city_a = defaultdict(list)
+    for f in areas:
+        by_city_a[f["properties"]["city"]].append(f["properties"])
+    out = {}
+    for key, (unit, test) in COVERAGE.items():
+        pool = by_city_l if unit == "l" else by_city_a
+        out[key] = {"unit": "listings" if unit == "l" else "neighbourhoods",
+                    "cities": {c: [sum(1 for x in pool[c] if test(x)), len(pool[c])] for c in CITY_NAMES.values()}}
+    (OUT / "coverage.json").write_text(dumps(out), encoding="utf-8")
+    print("coverage:", {k: {c: f"{v[0]}/{v[1]}" for c, v in d["cities"].items()} for k, d in out.items() if k in ("pedestrians", "loading")})
+
+
 def main() -> None:
     listings = json.loads(gzip.decompress((BUILD / "listings.geojson.gz").read_bytes()))
     places = json.loads(gzip.decompress((BUILD / "places.json.gz").read_bytes()))
@@ -227,6 +265,7 @@ def main() -> None:
         assert size < 20 * 1024 * 1024, f"{path} is {size} bytes, too close to the 25 MiB asset cap"
         versions[name] = hashlib.sha1(text.encode()).hexdigest()[:10]
         print(f"{path.relative_to(ROOT)}  {size / 1e6:.2f} MB")
+    write_coverage(files)
     detail_hash = hashlib.sha1()
     for path in sorted(detail_dir.iterdir()):
         detail_hash.update(path.read_bytes())

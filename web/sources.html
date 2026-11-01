@@ -44,6 +44,33 @@
       td { border: 0; padding: 5px 14px; }
       td[data-k]::before { content: attr(data-k); display: block; font-size: 11px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); }
     }
+    .cov { background: var(--paper); border: 1px solid var(--line); border-radius: 14px; padding: 6px 0; margin: 0 0 8px; }
+    .cov-row { display: grid; grid-template-columns: minmax(190px, 1.3fr) repeat(6, minmax(0, 1fr)); gap: 10px; align-items: center; padding: 8px 14px; border-bottom: 1px solid var(--line); }
+    .cov-row:last-child { border-bottom: 0; }
+    .cov-head { font-size: 12px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); text-align: center; }
+    .cov-head span:first-child { text-align: left; }
+    .cov-name b { display: block; font-size: 13.5px; }
+    .cov-name small { color: var(--muted); font-size: 12px; }
+    .cov-cell { display: grid; gap: 3px; text-align: center; border-radius: 10px; padding: 4px 6px; transition: background .15s; }
+    .cov-cell.is-on { background: #f1ebe2; }
+    .cov-cell .bar { height: 8px; border-radius: 99px; background: #eee6da; overflow: hidden; }
+    .cov-cell .bar i { display: block; height: 100%; border-radius: 99px; background: var(--c); }
+    .cov-cell b { font-size: 14px; font-variant-numeric: tabular-nums; color: var(--c); }
+    .cov-cell small { font-size: 11px; color: var(--muted); font-variant-numeric: tabular-nums; }
+    .cov-cell.na b { color: #b9ada0; font-weight: 500; }
+    .cov-cell .ct { display: none; }
+    .covbar { display: flex; align-items: center; gap: 6px; margin-top: 6px; font-size: 12px; color: var(--muted); }
+    .covbar .bar { flex: 0 0 90px; height: 6px; border-radius: 99px; background: #eee6da; overflow: hidden; }
+    .covbar .bar i { display: block; height: 100%; background: var(--c); }
+    .sk { background: linear-gradient(90deg, #efe8de 25%, #f8f3ec 50%, #efe8de 75%); background-size: 200% 100%; animation: sk 1.2s linear infinite; border-radius: 8px; }
+    @keyframes sk { to { background-position: -200% 0; } }
+    .sk-row { height: 34px; margin: 8px 14px; }
+    @media (max-width: 760px) {
+      .cov-head { display: none; }
+      .cov-row { grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+      .cov-name { grid-column: 1 / -1; }
+      .cov-cell .ct { display: block; font-size: 11px; font-weight: 600; color: var(--ink); }
+    }
   </style>
 </head>
 <body>
@@ -60,6 +87,10 @@
       <span><i class="dot ok"></i>Fresh</span><span><i class="dot due"></i>Refresh due</span><span><i class="dot old"></i>Overdue</span><span><i class="dot live"></i>Live, fetched on demand</span>
     </div>
     <div class="filters" id="filters"></div>
+    <h2 style="margin-top:8px">Coverage by city</h2>
+    <p class="lead">Share of our listings or neighbourhoods that actually carry each dataset.</p>
+    <div class="cov" id="cov"><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div><div class="sk sk-row"></div></div>
+    <h2>Every source</h2>
     <table>
       <thead><tr><th>Data</th><th>Cities</th><th>Source</th><th>Format</th><th>In our data</th><th>Publisher updates</th><th>We refresh</th><th>Status</th></tr></thead>
       <tbody id="rows"></tbody>
@@ -73,21 +104,21 @@
     const NEW4 = ["Valencia", "Sevilla", "Zaragoza", "Málaga"];
     // pulled: date our copy was downloaded (YYYY-MM-DD). cadence: recommended refresh in days (0 = live).
     const SOURCES = [
-      { name: "Commercial listings", what: "Premises for sale and rent: price, size, photos, agency", cities: ALL, src: "Idealista via Apify (igolaizola/idealista-scraper)", url: "https://apify.com/igolaizola/idealista-scraper", fmt: "JSON", period: "Sale + rent after dedupe: Madrid 1,282 · Barcelona 844 · Zaragoza 49+49 · Valencia 50+50 · Sevilla 50+48 · Málaga 48+48. New cities clipped to the OSM municipal boundary", pulled: { "Madrid": "2026-10-25", "Barcelona": "2026-10-25", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Continuous", cadence: 7 },
-      { name: "Madrid premises census", what: "Every street door: activity, open or closed", cities: ["Madrid"], src: "datos.madrid.es · Censo de locales y actividades", url: "https://datos.madrid.es/", fmt: "CSV", period: "16 Oct 2026", pulled: "2026-10-16", pub: "Monthly", cadence: 30 },
-      { name: "Barcelona premises census", what: "Ground-floor premises: activity, empty units for rent or sale", cities: ["Barcelona"], src: "Open Data BCN · Cens de locals en planta baixa", url: "https://opendata-ajuntament.barcelona.cat/data/es/dataset/cens-locals-planta-baixa-act-economica", fmt: "CSV", period: "2024 census", pulled: "2026-10-20", pub: "Every 2–3 years", cadence: 365 },
-      { name: "Shops (OpenStreetMap)", what: "Open shops, cafés, restaurants by type. No vacancy", cities: NEW4, src: "OpenStreetMap via Geofabrik extracts", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extract of 1 Nov 2026", pulled: "2026-11-01", pub: "Daily", cadence: 90 },
-      { name: "Neighbourhood boundaries", what: "Barrios (Madrid, Barcelona) and OSM barrios or districts (new cities)", cities: ALL, src: "datos.madrid.es · Open Data BCN · OpenStreetMap", url: "https://datos.madrid.es/", fmt: "GeoJSON / OSM PBF", period: "Current", pulled: "2026-11-01", pub: "Rarely", cadence: 365 },
-      { name: "Household income", what: "Net income per person and household by census section", cities: ALL, src: "INE · Atlas de distribución de renta de los hogares", url: "https://www.ine.es/dynt3/inebase/index.htm?padre=12385", fmt: "CSV", period: "Income year 2023 (Madrid, Barcelona) · 2024 (new cities)", pulled: "2026-11-01", pub: "Yearly (autumn)", cadence: 365 },
-      { name: "Census sections", what: "Section boundaries used to place listings in an income section", cities: ALL, src: "INE · Cartografía de secciones censales", url: "https://www.ine.es/ss/Satellite?L=es_ES&c=Page&cid=1259952026632&p=1259952026632&pagename=ProductosYServicios%2FPYSLayout", fmt: "Shapefile", period: "1 Jan 2024", pulled: "2026-10-31", pub: "Yearly", cadence: 365 },
-      { name: "Residents by age", what: "Population and age bands by barrio", cities: ["Madrid", "Barcelona"], src: "datos.madrid.es Padrón (dataset 200076) · Open Data BCN Padró", url: "https://datos.madrid.es/", fmt: "CSV", period: "2026", pulled: "2026-10-22", pub: "Monthly (Madrid) · yearly (Barcelona)", cadence: 180 },
-      { name: "Visitors (mobility)", what: "Daily trips into each district from elsewhere, weekday and Saturday", cities: ALL, src: "MITMA · Estudio de movilidad con big data", url: "https://www.transportes.gob.es/ministerio/proyectos-singulares/estudios-de-movilidad-con-big-data", fmt: "CSV (gz, S3)", period: "3 and 7 Jun 2025", pulled: "2026-11-01", pub: "Monthly, a few months behind", cadence: 180 },
-      { name: "Pedestrian counters", what: "People per day past fixed sensors", cities: ["Madrid"], src: "datos.madrid.es · Aforos peatonales (dataset 300321)", url: "https://datos.madrid.es/", fmt: "CSV", period: "Jan–Jun 2024", pulled: "2026-10-26", pub: "Half-yearly", cadence: 180 },
-      { name: "Loading bays (official)", what: "Reserved loading and unloading zones", cities: ["Madrid", "Barcelona", "Valencia"], src: "datos.madrid.es · Open Data BCN · Geoportal València", url: "https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/MapServer/178", fmt: "CSV / GeoJSON", period: "Current", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01" }, pub: "Irregular", cadence: 180 },
-      { name: "Parking, loading docks, schools, offices", what: "Points of interest near each listing", cities: ALL, src: "OpenStreetMap via Geofabrik", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extracts of 26 Oct and 1 Nov 2026", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Daily", cadence: 90 },
-      { name: "Transit stops and departures", what: "Metro and bus stops, Wednesday departures", cities: ["Madrid", "Barcelona"], src: "CRTM GTFS · EMT · TMB GTFS", url: "https://datos.crtm.es/", fmt: "GTFS / GeoJSON", period: "Timetables as of Oct 2026", pulled: "2026-10-20", pub: "Each timetable change", cadence: 90 },
-      { name: "Floor area and retail floor", what: "Gross built floor and retail-use floor per barrio", cities: ["Madrid", "Barcelona"], src: "Catastro · INSPIRE buildings", url: "https://www.catastro.hacienda.gob.es/webinspire/index.html", fmt: "GML (zip)", period: "2026", pulled: "2026-10-20", pub: "Every 6 months", cadence: 365 },
-      { name: "Road traffic", what: "Vehicles per hour at traffic sensors", cities: ["Madrid"], src: "datos.madrid.es · Tráfico en tiempo real", url: "https://datos.madrid.es/", fmt: "XML / CSV", period: "Snapshot, Oct 2026", pulled: "2026-10-20", pub: "Every 5 minutes", cadence: 90 },
+      { name: "Commercial listings", cov: "listings_photo", covNote: "listings with a photo", what: "Premises for sale and rent: price, size, photos, agency", cities: ALL, src: "Idealista via Apify (igolaizola/idealista-scraper)", url: "https://apify.com/igolaizola/idealista-scraper", fmt: "JSON", period: "Sale + rent after dedupe: Madrid 1,282 · Barcelona 844 · Zaragoza 49+49 · Valencia 50+50 · Sevilla 50+48 · Málaga 48+48. New cities clipped to the OSM municipal boundary", pulled: { "Madrid": "2026-10-25", "Barcelona": "2026-10-25", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Continuous", cadence: 7 },
+      { name: "Madrid premises census", cov: "premises_census", covNote: "barrios with empty-door counts", what: "Every street door: activity, open or closed", cities: ["Madrid"], src: "datos.madrid.es · Censo de locales y actividades", url: "https://datos.madrid.es/", fmt: "CSV", period: "16 Oct 2026", pulled: "2026-10-16", pub: "Monthly", cadence: 30 },
+      { name: "Barcelona premises census", cov: "premises_census", covNote: "barrios with empty-door counts", what: "Ground-floor premises: activity, empty units for rent or sale", cities: ["Barcelona"], src: "Open Data BCN · Cens de locals en planta baixa", url: "https://opendata-ajuntament.barcelona.cat/data/es/dataset/cens-locals-planta-baixa-act-economica", fmt: "CSV", period: "2024 census", pulled: "2026-10-20", pub: "Every 2–3 years", cadence: 365 },
+      { name: "Shops (OpenStreetMap)", cov: "osm_shops", covNote: "areas with shop counts", what: "Open shops, cafés, restaurants by type. No vacancy", cities: NEW4, src: "OpenStreetMap via Geofabrik extracts", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extract of 1 Nov 2026", pulled: "2026-11-01", pub: "Daily", cadence: 90 },
+      { name: "Neighbourhood boundaries", cov: "boundaries", covNote: "areas mapped", what: "Barrios (Madrid, Barcelona) and OSM barrios or districts (new cities)", cities: ALL, src: "datos.madrid.es · Open Data BCN · OpenStreetMap", url: "https://datos.madrid.es/", fmt: "GeoJSON / OSM PBF", period: "Current", pulled: "2026-11-01", pub: "Rarely", cadence: 365 },
+      { name: "Household income", cov: "income", covNote: "areas with income", what: "Net income per person and household by census section", cities: ALL, src: "INE · Atlas de distribución de renta de los hogares", url: "https://www.ine.es/dynt3/inebase/index.htm?padre=12385", fmt: "CSV", period: "Income year 2023 (Madrid, Barcelona) · 2024 (new cities)", pulled: "2026-11-01", pub: "Yearly (autumn)", cadence: 365 },
+      { name: "Census sections", cov: "census_section", covNote: "listings matched to a section", what: "Section boundaries used to place listings in an income section", cities: ALL, src: "INE · Cartografía de secciones censales", url: "https://www.ine.es/ss/Satellite?L=es_ES&c=Page&cid=1259952026632&p=1259952026632&pagename=ProductosYServicios%2FPYSLayout", fmt: "Shapefile", period: "1 Jan 2024", pulled: "2026-10-31", pub: "Yearly", cadence: 365 },
+      { name: "Residents by age", cov: "age", covNote: "areas with age bands", what: "Population and age bands by barrio", cities: ["Madrid", "Barcelona"], src: "datos.madrid.es Padrón (dataset 200076) · Open Data BCN Padró", url: "https://datos.madrid.es/", fmt: "CSV", period: "2026", pulled: "2026-10-22", pub: "Monthly (Madrid) · yearly (Barcelona)", cadence: 180 },
+      { name: "Visitors (mobility)", cov: "mobility", covNote: "listings with district visitors", what: "Daily trips into each district from elsewhere, weekday and Saturday", cities: ALL, src: "MITMA · Estudio de movilidad con big data", url: "https://www.transportes.gob.es/ministerio/proyectos-singulares/estudios-de-movilidad-con-big-data", fmt: "CSV (gz, S3)", period: "3 and 7 Jun 2025", pulled: "2026-11-01", pub: "Monthly, a few months behind", cadence: 180 },
+      { name: "Pedestrian counters", cov: "pedestrians", covNote: "listings with a counter within 250 m", what: "People per day past fixed sensors", cities: ["Madrid"], src: "datos.madrid.es · Aforos peatonales (dataset 300321)", url: "https://datos.madrid.es/", fmt: "CSV", period: "Jan–Jun 2024", pulled: "2026-10-26", pub: "Half-yearly", cadence: 180 },
+      { name: "Loading bays (official)", cov: "loading", covNote: "listings with a loading bay within 300 m", what: "Reserved loading and unloading zones", cities: ["Madrid", "Barcelona", "Valencia"], src: "datos.madrid.es · Open Data BCN · Geoportal València", url: "https://geoportal.valencia.es/server/rest/services/OPENDATA/Trafico/MapServer/178", fmt: "CSV / GeoJSON", period: "Current", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01" }, pub: "Irregular", cadence: 180 },
+      { name: "Parking, loading docks, schools, offices", cov: "osm_points", covNote: "listings with a car park within 300 m", what: "Points of interest near each listing", cities: ALL, src: "OpenStreetMap via Geofabrik", url: "https://download.geofabrik.de/europe/spain.html", fmt: "OSM PBF", period: "Extracts of 26 Oct and 1 Nov 2026", pulled: { "Madrid": "2026-10-26", "Barcelona": "2026-10-26", "Valencia": "2026-11-01", "Sevilla": "2026-11-01", "Zaragoza": "2026-11-01", "Málaga": "2026-11-01" }, pub: "Daily", cadence: 90 },
+      { name: "Transit stops and departures", cov: "transit", covNote: "areas with stops", what: "Metro and bus stops, Wednesday departures", cities: ["Madrid", "Barcelona"], src: "CRTM GTFS · EMT · TMB GTFS", url: "https://datos.crtm.es/", fmt: "GTFS / GeoJSON", period: "Timetables as of Oct 2026", pulled: "2026-10-20", pub: "Each timetable change", cadence: 90 },
+      { name: "Floor area and retail floor", cov: "floor", covNote: "areas with retail floor", what: "Gross built floor and retail-use floor per barrio", cities: ["Madrid", "Barcelona"], src: "Catastro · INSPIRE buildings", url: "https://www.catastro.hacienda.gob.es/webinspire/index.html", fmt: "GML (zip)", period: "2026", pulled: "2026-10-20", pub: "Every 6 months", cadence: 365 },
+      { name: "Road traffic", cov: "traffic", covNote: "areas with a traffic sensor", what: "Vehicles per hour at traffic sensors", cities: ["Madrid"], src: "datos.madrid.es · Tráfico en tiempo real", url: "https://datos.madrid.es/", fmt: "XML / CSV", period: "Snapshot, Oct 2026", pulled: "2026-10-20", pub: "Every 5 minutes", cadence: 90 },
       { name: "Yield benchmarks", what: "Prime and typical retail yields used in the deal calculator", cities: ALL, src: "CBRE, Colliers, idealista reports", url: "https://www.idealista.com/sala-de-prensa/informes-precio-vivienda/", fmt: "Report (PDF/web)", period: "Q3 2026", pulled: "2026-10-13", pub: "Quarterly", cadence: 90 },
       { name: "Nearby businesses (live)", what: "Shops around a listing when you open it", cities: ALL, src: "Google Places API (New)", url: "https://developers.google.com/maps/documentation/places/web-service", fmt: "API", period: "On demand", pulled: null, pub: "Live", cadence: 0 },
       { name: "10-minute walk (live)", what: "Walking catchment around a listing", cities: ALL, src: "OpenRouteService isochrones", url: "https://openrouteservice.org/", fmt: "API", period: "On demand", pulled: null, pub: "Live", cadence: 0 },
@@ -112,13 +143,41 @@
     }
     const esc = (t) => String(t).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
     let city = "All";
+    let COV = null;
+    const covColour = (p) => `hsl(${Math.round(p * 1.25)}, 55%, ${p >= 50 ? 34 : 42}%)`;
+    const pct = (a) => (a[1] ? Math.round((a[0] / a[1]) * 100) : 0);
+    function renderCov() {
+      const el = document.getElementById("cov");
+      if (!COV) return;
+      const list = SOURCES.filter((s) => s.cov && COV[s.cov] && (city === "All" || s.cities.includes(city)));
+      const head = `<div class="cov-row cov-head"><span></span>${ALL.map((c) => `<span>${c}</span>`).join("")}</div>`;
+      el.innerHTML = head + list.map((s) => {
+        const d = COV[s.cov];
+        const cells = ALL.map((c) => {
+          const v = d.cities[c];
+          const on = city === c ? " is-on" : "";
+          if (!s.cities.includes(c) || !v || !v[0]) return `<div class="cov-cell na${on}" style="--c:#b9ada0"><span class="ct">${c}</span><b>${s.cities.includes(c) ? "0%" : "—"}</b><span class="bar"><i style="width:0"></i></span><small>${s.cities.includes(c) && v ? `0 / ${v[1].toLocaleString("en-GB")}` : "no source"}</small></div>`;
+          const p = pct(v);
+          return `<div class="cov-cell${on}" style="--c:${covColour(p)}" title="${v[0]} of ${v[1]} ${d.unit}"><span class="ct">${c}</span><b>${p}%</b><span class="bar"><i style="width:${Math.max(3, p)}%"></i></span><small>${v[0].toLocaleString("en-GB")} / ${v[1].toLocaleString("en-GB")}</small></div>`;
+        }).join("");
+        return `<div class="cov-row"><div class="cov-name"><b>${esc(s.name)}</b><small>% of ${esc(s.covNote)}</small></div>${cells}</div>`;
+      }).join("");
+    }
+    function covSummary(s) {
+      if (!COV || !s.cov || !COV[s.cov]) return "";
+      const cs = city === "All" ? s.cities : [city];
+      const t = cs.reduce((a, c) => { const v = COV[s.cov].cities[c] || [0, 0]; return [a[0] + v[0], a[1] + v[1]]; }, [0, 0]);
+      const p = pct(t);
+      return `<span class="covbar" style="--c:${covColour(p)}"><span class="bar"><i style="width:${Math.max(2, p)}%"></i></span>${p}% of ${COV[s.cov].unit}</span>`;
+    }
+    fetch("data/coverage.json", { cache: "no-cache" }).then((r) => r.json()).then((d) => { COV = d; render(); }).catch(() => { document.getElementById("cov").innerHTML = '<p class="lead" style="padding:8px 14px;margin:0">Coverage could not be loaded.</p>'; });
     function render() {
       const rows = SOURCES.filter((s) => city === "All" || s.cities.includes(city));
       document.getElementById("rows").innerHTML = rows.map((s) => {
         const [cls, label] = status(s, city === "All" ? null : city);
         const pulled = s.pulled == null ? "—" : typeof s.pulled === "string" ? fmtDate(s.pulled) : city !== "All" && s.pulled[city] ? fmtDate(s.pulled[city]) : [...new Set(Object.values(s.pulled))].sort().map(fmtDate).join(" / ");
         return `<tr>
-          <td class="name" data-k="Data">${esc(s.name)}<span class="sub">${esc(s.what)}</span></td>
+          <td class="name" data-k="Data">${esc(s.name)}<span class="sub">${esc(s.what)}</span>${covSummary(s)}</td>
           <td data-k="Cities">${s.cities.length === ALL.length ? '<span class="chip">All six</span>' : s.cities.map((c) => `<span class="chip">${c}</span>`).join("")}</td>
           <td data-k="Source"><a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.src)}</a></td>
           <td data-k="Format">${esc(s.fmt)}</td>
@@ -128,6 +187,7 @@
           <td data-k="Status" class="status"><i class="dot ${cls}"></i>${label}</td>
         </tr>`;
       }).join("");
+      renderCov();
       document.querySelectorAll("#filters button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.c === city)));
     }
     document.getElementById("filters").innerHTML = ["All", ...ALL].map((c) => `<button type="button" data-c="${c}">${c}</button>`).join("");

@@ -855,9 +855,15 @@ function areaRank(props) {
   const n = pool.length || 1;
   const pct = Math.round(100 * (n - above - Math.max(1, equal)) / Math.max(1, n - 1));
   const top = Math.max(1, Math.ceil((100 * (above + Math.max(1, equal))) / n));
-  return { pct: Math.max(0, Math.min(100, pct)), n, text: `Top ${top}% of ${props.city}` };
+  return { pct: Math.max(0, Math.min(100, pct)), n, rank: above + 1, top, text: `Top ${top}% of ${props.city}` };
 }
 
+/** Round 34: headline prices, median €/m² from ≥3 listings each; "—" when too few. */
+function areaPriceHtml(props) {
+  const pr = state.areaPrices?.get(props.id) || {};
+  const v = (x, unit, n, kind) => `<span class="aprice${x ? "" : " aprice--na"}" title="${x ? `Median of ${n} ${kind} listings` : `Fewer than 3 ${kind} listings`}"><b>${x ? `€${formatNumber(x >= 100 ? Math.round(x / 10) * 10 : Math.round(x))}` : "—"}</b><small>${unit}</small></span>`;
+  return `<span class="row-price-meta aprices">${v(pr.rent, "/m²/mo rent", pr.nRent, "rent")}${v(pr.sale, "/m² sale", pr.nSale, "sale")}</span>`;
+}
 function compactNum(n) { return n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : formatNumber(Math.round(n)); }
 /** Round 33: compact metric chips for a neighbourhood card (only metrics that exist for the city). */
 function areaChipsHtml(props) {
@@ -865,8 +871,7 @@ function areaChipsHtml(props) {
   const out = [];
   if (Number.isFinite(props.population)) out.push(chip(`<b>${compactNum(props.population)}</b> residents`, "Residents"));
   if (Number.isFinite(props.matches)) out.push(chip(`<b>${formatNumber(props.matches)}</b> rivals`, "Same-type businesses already open"));
-  if (props.vacant != null) out.push(chip(`<b>${formatNumber(props.vacant)}</b> empty`, "Empty or closed premises"));
-  if (props.listed) out.push(chip(`<b>${formatNumber(props.listed)}</b> listings`, "Premises listed for rent or sale", " achip--on"));
+  if (props.listed) out.push(chip(`<b>${formatNumber(props.listed)}</b> listed`, "Premises listed for rent or sale", " achip--on"));
   return out.length ? `<span class="row-chips">${out.join("")}</span>` : "";
 }
 
@@ -888,8 +893,9 @@ function renderAreaRanking() {
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(props.name)}</span>
         <span class="row-city">${escapeHtml([props.district && props.district !== props.name ? props.district : "", props.city].filter(Boolean).join(", "))}</span>
+        ${areaPriceHtml(props)}
         ${areaChipsHtml(props)}
-        <span class="score-bar-wrap">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} neighbourhoods · raw fit ${Math.round(props.score)}`, false, false, `${r.text} neighbourhoods`); })()}</span>
+        <span class="score-bar-wrap">${(() => { const r = areaRank(props); return scoreBarHtml(props.score, `Fit ${Math.round(props.score)}/100 · #${r.rank} of ${r.n} ${props.city} neighbourhoods`, false, false, `${r.text} neighbourhoods`); })()}</span>
       </button></li>`;
     })
     .join("");
@@ -2292,8 +2298,9 @@ function walkEquationHtml(areaScore, walkScore) {
 function areaModalContent(props) {
   const concept = (state.query?.label || "your concept").toLowerCase();
   const pool = cityAreaPool(props);
-  const rank = 1 + pool.filter((x) => x.score > props.score).length;
-  const top = pool.length ? Math.max(1, Math.round((100 * rank) / pool.length)) : null;
+  const ar = areaRank(props);
+  const rank = ar.rank;
+  const top = pool.length ? ar.top : null;
   const ok = Number.isFinite(props.score) && props.score >= 0;
   return `<article class="modal-area" id="detail-modal-title">
     <h2>${escapeHtml(props.name)}</h2>
@@ -3460,6 +3467,17 @@ function tallyListings() {
     counts.set(areaId, bucket);
   }
   state.listingCounts = counts;
+  // Round 34: median €/m² per neighbourhood from our Idealista listings (rent per month, sale), min 3 listings.
+  const per = new Map();
+  for (const f of state.listings) {
+    const q = f.properties || {};
+    if (!q.i || !(q.p > 0) || !(q.sz >= 10)) continue;
+    const b = per.get(q.i) || { rent: [], sale: [] };
+    (q.op === "rent" ? b.rent : b.sale).push(q.p / q.sz);
+    per.set(q.i, b);
+  }
+  const med = (v) => { if (v.length < 3) return null; v.sort((a, b) => a - b); const m = v.length >> 1; return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2; };
+  state.areaPrices = new Map([...per].map(([id, b]) => [id, { rent: med(b.rent), sale: med(b.sale), nRent: b.rent.length, nSale: b.sale.length }]));
 }
 
 function readInputs(fly) {

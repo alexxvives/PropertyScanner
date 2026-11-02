@@ -858,6 +858,18 @@ function areaRank(props) {
   return { pct: Math.max(0, Math.min(100, pct)), n, text: `Top ${top}% of ${props.city}` };
 }
 
+function compactNum(n) { return n >= 10000 ? `${Math.round(n / 1000)}k` : n >= 1000 ? `${(n / 1000).toFixed(1).replace(/\.0$/, "")}k` : formatNumber(Math.round(n)); }
+/** Round 33: compact metric chips for a neighbourhood card (only metrics that exist for the city). */
+function areaChipsHtml(props) {
+  const chip = (txt, title, cls = "") => `<span class="achip${cls}" title="${escapeHtml(title)}">${txt}</span>`;
+  const out = [];
+  if (Number.isFinite(props.population)) out.push(chip(`<b>${compactNum(props.population)}</b> residents`, "Residents"));
+  if (Number.isFinite(props.matches)) out.push(chip(`<b>${formatNumber(props.matches)}</b> rivals`, "Same-type businesses already open"));
+  if (props.vacant != null) out.push(chip(`<b>${formatNumber(props.vacant)}</b> empty`, "Empty or closed premises"));
+  if (props.listed) out.push(chip(`<b>${formatNumber(props.listed)}</b> listings`, "Premises listed for rent or sale", " achip--on"));
+  return out.length ? `<span class="row-chips">${out.join("")}</span>` : "";
+}
+
 function renderAreaRanking() {
   if (!areaRanking || !areaRankingTitle) return;
   const rows = areasInView()
@@ -875,8 +887,9 @@ function renderAreaRanking() {
       return `<li><button type="button" class="${selected.trim()}" data-kind="area" data-id="${escapeHtml(props.id)}">
         <span class="rank-num">${index + 1}</span>
         <span class="row-name">${escapeHtml(props.name)}</span>
-        <span class="row-city">${escapeHtml(props.city)}</span>
-        <span class="row-area-score">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} barrios · raw fit ${Math.round(props.score)}`, false, true, r.text); })()}</span>
+        <span class="row-city">${escapeHtml([props.district && props.district !== props.name ? props.district : "", props.city].filter(Boolean).join(", "))}</span>
+        ${areaChipsHtml(props)}
+        <span class="score-bar-wrap">${(() => { const r = areaRank(props); return scoreBarHtml(r.pct, `Rank ${r.pct}/100 among ${r.n} ${props.city} neighbourhoods · raw fit ${Math.round(props.score)}`, false, false, `${r.text} neighbourhoods`); })()}</span>
       </button></li>`;
     })
     .join("");
@@ -2289,8 +2302,7 @@ function areaModalContent(props) {
       <div class="ahero__ring">${fitRingHtml(props.score, `for ${concept}`)}</div>
       <div class="ahero__txt">
         <p class="ahero__rank"><b>#${rank}</b> of ${pool.length} ${escapeHtml(props.city)} neighbourhoods</p>
-        <span class="cbar cbar--${toneOf(1 - (top || 50) / 100)} ahero__bar"><i style="width:${Math.max(3, 100 - (top || 50))}%"></i></span>
-        <p class="ahero__top">${top ? `Top ${top}%` : ""}</p>
+        ${top ? `<span class="ahero__top">Top ${top}%</span>` : ""}
       </div>
     </section>
     <section class="flat">

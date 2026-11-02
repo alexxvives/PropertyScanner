@@ -3099,3 +3099,8 @@ body.choosing .has-tick .tick { display: flex !important; }
 .ranking-panel .listing-rank { border-top: 1px solid var(--line); }
 @media (min-width: 1025px) { .ranking-panel .listing-rank, .ranking-panel .area-rank { padding-top: 14px; } }
 .tenant-excl-toggle { white-space: nowrap; align-items: center; gap: 4px; }
+/* Round 36: colour box + map styles follow the right panel, like the filters follow the left */
+@media (min-width: 1025px) {
+  body.right-closed .map-toolbar-anchor { right: 56px !important; }
+  .map-toolbar-anchor { transition: left .22s ease, right .22s ease; }
+}

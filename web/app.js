@@ -3870,8 +3870,8 @@ document.addEventListener("pointerover", (event) => {
   });
   const rail = document.getElementById("filter-rail"), rt = document.getElementById("rail-toggle");
   const setRail = (open) => { rail?.classList.toggle("is-collapsed", !open); rt?.setAttribute("aria-expanded", String(open)); };
-  { const sv = localStorage.getItem("ps-rail-open"); setRail(sv != null ? sv === "1" : window.innerWidth >= 1400 && window.innerHeight >= 760); }
-  rt?.addEventListener("click", () => { const open = rail.classList.contains("is-collapsed"); setRail(open); localStorage.setItem("ps-rail-open", open ? "1" : "0"); });
+  { localStorage.removeItem("ps-rail-open"); const sv = localStorage.getItem("ps-rail-open2"); setRail(sv === "1"); }
+  rt?.addEventListener("click", () => { const open = rail.classList.contains("is-collapsed"); setRail(open); localStorage.setItem("ps-rail-open2", open ? "1" : "0"); });
   // Neighbourhood ranking: collapsed by default on short screens (the map already shows the same colours).
   const tog = document.getElementById("area-toggle");
   const sec = document.querySelector(".area-rank");

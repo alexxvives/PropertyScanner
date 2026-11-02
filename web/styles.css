@@ -3106,3 +3106,7 @@ body.choosing .has-tick .tick { display: flex !important; }
 }
 /* Round 37: property-ranking divider matches the neighbourhood one (gap above the line, same padding) */
 .ranking-panel .listing-rank, .ranking-panel .area-rank { margin-top: 8px !important; padding-top: 14px !important; border-top: 1px solid var(--line) !important; }
+/* Round 38: "Updated…" sits right-aligned on the caption line under the score bar */
+.score-bar__caption--split { display: flex; align-items: baseline; gap: 8px; min-width: 0; white-space: nowrap; }
+.score-bar__caption--split .cap-l { flex: 1 1 auto; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.score-bar__caption--split .upd { display: inline; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: inherit; color: inherit; letter-spacing: normal; }

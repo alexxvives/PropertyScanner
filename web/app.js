@@ -448,7 +448,7 @@ function scoreTipHtml(label) {
   return `<span class="score-tip" tabindex="0" aria-label="${escapeHtml(tip)}"><span class="score-tip__mark" aria-hidden="true">?</span><span class="score-tip__bubble">${escapeHtml(tip)}</span></span>`;
 }
 
-function scoreBarHtml(score, label = "Fit score", withTip = false, featured = false, caption = "") {
+function scoreBarHtml(score, label = "Fit score", withTip = false, featured = false, caption = "", aside = "") {
   const value = Math.max(0, Math.min(100, Math.round(Number(score) || 0)));
   const tip = withTip ? scoreTipHtml(label) : "";
   const featuredClass = featured ? " score-bar--featured" : "";
@@ -459,7 +459,7 @@ function scoreBarHtml(score, label = "Fit score", withTip = false, featured = fa
     ${tip}
     <div class="score-bar__track" style="--score-pct:${value}">${ticks}<div class="score-bar__gradient score-bar__gradient--dim" aria-hidden="true"></div><div class="score-bar__gradient score-bar__gradient--fill" aria-hidden="true"></div></div>
     <span class="score-bar__value">${value}</span>
-    ${caption ? `<span class="score-bar__caption">${escapeHtml(caption)}</span>` : ""}
+    ${caption || aside ? `<span class="score-bar__caption${aside ? " score-bar__caption--split" : ""}"><span class="cap-l">${escapeHtml(caption)}</span>${aside}</span>` : ""}
   </div>`;
 }
 
@@ -1152,8 +1152,7 @@ function renderListingRanking() {
         <span class="row-name">${escapeHtml(title)}</span>
         <span class="row-city">${escapeHtml(meta)}</span>
         <span class="row-price-meta">${listingPriceHtml(item.props, { variant: "compact", showPm2: false, inlineSize: true })}${opTagHtml(item.props, "row-tag")}${listingOutlier(item.props) ? `<span class="row-tag row-tag--warn" title="${escapeHtml(listingOutlier(item.props))}">⚠ outlier</span>` : ""}</span>
-        ${updatedAgoHtml(item.props, "upd--row")}
-        <span class="score-bar-wrap">${tev ? scoreBarHtml(item.rank.pct, `${state.tenant.name} score ${item.rank.raw}/100 · rank ${item.rank.pct}`, false, false, tenantRowCaption(tev)) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text)}</span>
+        <span class="score-bar-wrap">${tev ? scoreBarHtml(item.rank.pct, `${state.tenant.name} score ${item.rank.raw}/100 · rank ${item.rank.pct}`, false, false, tenantRowCaption(tev), updatedAgoHtml(item.props, "upd--row")) : scoreBarHtml(item.rank.pct, `Rank ${item.rank.pct}/100 · raw fit ${item.rank.raw}`, false, false, item.rank.text, updatedAgoHtml(item.props, "upd--row"))}</span>
       </button></li>`;
         })
         .join("")

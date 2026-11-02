@@ -1099,7 +1099,7 @@ function renderTenantToggle() {
   }
   box.hidden = false;
   const n = state.tenantHidden || 0;
-  box.innerHTML = `<input type="checkbox" id="show-excluded"${state.showExcluded ? " checked" : ""}> Show warehouses &amp; outliers${n || state.showExcluded ? ` <span class="unit-note">(${state.showExcluded ? "shown" : `${n} hidden`})</span>` : ""}`;
+  box.innerHTML = `<input type="checkbox" id="show-excluded"${state.showExcluded ? " checked" : ""}> Show outliers${n ? ` <span class="unit-note">(${n})</span>` : ""}${infoTip("Hidden: warehouses (naves industriales), units over 10,000 m², and prices per m² more than 5× above or below the city median for rent or sale, usually listing errors. Tick to show them with a ⚠ tag.")}`;
 }
 
 document.addEventListener("change", (event) => {
@@ -3976,6 +3976,8 @@ document.addEventListener("click", (event) => {
   document.addEventListener("mouseover", (e) => { const el = e.target.closest?.(".score-tip"); if (el && el !== owner) show(el); else if (!el && owner) hide(); });
   document.addEventListener("focusin", (e) => { const el = e.target.closest?.(".score-tip"); if (el) show(el); });
   document.addEventListener("focusout", hide);
+  // Tips inside a <label> (e.g. Show outliers): a tap opens the tip instead of toggling the checkbox.
+  document.addEventListener("click", (e) => { const el = e.target.closest?.("label .score-tip"); if (!el) return; e.preventDefault(); el.focus(); show(el); });
   document.addEventListener("scroll", hide, true);
 })();
 new MutationObserver(() => {

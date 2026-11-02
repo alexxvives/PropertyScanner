@@ -3098,3 +3098,4 @@ body.choosing .has-tick .tick { display: flex !important; }
 .ahero__txt { flex: 0 1 auto !important; }
 .ranking-panel .listing-rank { border-top: 1px solid var(--line); }
 @media (min-width: 1025px) { .ranking-panel .listing-rank, .ranking-panel .area-rank { padding-top: 14px; } }
+.tenant-excl-toggle { white-space: nowrap; align-items: center; gap: 4px; }

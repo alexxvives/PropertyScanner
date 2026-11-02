@@ -3104,3 +3104,5 @@ body.choosing .has-tick .tick { display: flex !important; }
   body.right-closed .map-toolbar-anchor { right: 56px !important; }
   .map-toolbar-anchor { transition: left .22s ease, right .22s ease; }
 }
+/* Round 37: property-ranking divider matches the neighbourhood one (gap above the line, same padding) */
+.ranking-panel .listing-rank, .ranking-panel .area-rank { margin-top: 8px !important; padding-top: 14px !important; border-top: 1px solid var(--line) !important; }

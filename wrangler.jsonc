@@ -2,6 +2,8 @@
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "property-scanner",
   "main": "worker.mjs",
+  // Re-stamp ?v=<hash> on assets before every deploy so edited JS/CSS always load fresh.
+  "build": { "command": "python3 etl/stamp_assets.py" },
   "compatibility_date": "2026-10-18",
   "workers_dev": true,
   "assets": {

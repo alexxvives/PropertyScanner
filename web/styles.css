@@ -3063,3 +3063,12 @@ body.choosing .has-tick .tick { display: flex !important; }
 /* Collapse buttons: both on the panel's inner edge (toward the map), mirrored chevrons */
 @media (min-width: 1025px) { .sheet-bar .panel-collapse--r { order: -1; margin: 0 8px 0 0; } }
 .sl-actions .pdf-btn2--block { white-space: nowrap; gap: 6px; padding: 0 10px; min-width: 0; }
+
+/* ---- Round 32: full-width centred segmented toggle; collapse button on the inner edge ---- */
+@media (min-width: 1025px) {
+  .ranking-panel .sheet-bar { grid-template-columns: 28px 1fr; gap: 10px; align-items: center; }
+  .ranking-panel .sheet-bar .panel-collapse--r { order: -1; margin: 0; }
+  .ranking-panel .sheet-tabs { width: 100%; }
+  .ranking-panel .sheet-tabs button { flex: 1 1 0; text-align: center; }
+}
+@media (min-width: 1025px) { .ranking-panel .sheet-bar .panel-collapse--r { position: relative; top: -2px; } }

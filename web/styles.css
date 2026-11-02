@@ -3049,3 +3049,17 @@ body.choosing .has-tick .tick { display: flex !important; }
 .upd { display: block; font-size: 10.5px; font-weight: 500; color: #94a3b8; letter-spacing: .01em; }
 .upd--row { margin: 1px 0 2px; }
 .ltop .upd { text-align: right; padding: 4px 2px 0; }
+
+/* ---- Round 31 ---- */
+.ranking-heading .rk-t { flex-basis: 100%; text-align: center; }
+.sl-actions { display: flex; align-items: stretch; gap: 8px; margin-top: 10px; }
+.sl-actions .pdf-btn2--block, .sl-actions .sl-choose { margin: 0; height: 38px; box-sizing: border-box; padding: 0 14px; border-radius: 999px; font: inherit; font-size: 13px; font-weight: 600; line-height: 1; display: inline-flex; align-items: center; justify-content: center; }
+.sl-actions .sl-choose { flex: 0 0 auto; min-width: 88px; border: 1px solid #1d1915; background: #fff; color: #1d1915; }
+.sl-actions .sl-choose.is-on { background: #3fb68b; border-color: #3fb68b; color: #fff; }
+.sl-actions .pdf-btn2--block { border: 1px solid #1d1915; }
+.pdf-btn2[disabled] { opacity: .35; cursor: default; }
+.sl-empty { margin: 8px 0 0; font-size: 12.5px; color: var(--muted); text-align: center; }
+.sl-count { min-width: 20px; height: 20px; padding: 0 6px; border-radius: 999px; background: #3fb68b; color: #fff; font-size: 11.5px; font-weight: 700; display: inline-grid; place-items: center; }
+/* Collapse buttons: both on the panel's inner edge (toward the map), mirrored chevrons */
+@media (min-width: 1025px) { .sheet-bar .panel-collapse--r { order: -1; margin: 0 8px 0 0; } }
+.sl-actions .pdf-btn2--block { white-space: nowrap; gap: 6px; padding: 0 10px; min-width: 0; }

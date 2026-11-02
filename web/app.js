@@ -4130,8 +4130,8 @@ function renderPdfBar() {
   const n = state.ticked.size;
   let dflt = 5; try { dflt = shortlistRows().length; } catch {}
   const dl = `<svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg>`;
-  bar.hidden = !state.choosing;
-  bar.innerHTML = state.choosing ? `<span class="choose-banner"><b>${n}</b> selected for the PDF<button type="button" class="choose-done" data-choose-done>Done</button></span>` : "";
+  bar.hidden = true;
+  bar.innerHTML = "";
   renderShortlistCard();
   syncTickMarkers();
   return;
@@ -4146,7 +4146,6 @@ function toggleTick(id) {
 function setChoosing(on) {
   state.choosing = on;
   document.body.classList.toggle("choosing", on);
-  if (on && !state.ticked.size) { try { shortlistRows().forEach((r) => state.ticked.add(String(r.id ?? r.props?.id))); } catch {} }
   if (on && document.body.classList.contains("right-closed")) document.getElementById("rpanel-rail")?.click();
   if (on) document.querySelector('[data-sheet-tab="listings"]')?.click();
   renderListingRanking();
@@ -4182,9 +4181,9 @@ function renderShortlistCard() {
     const thumb = p.x?.thumb ? imgAt(p.x.thumb, "s") : "";
     return `<li><button type="button" data-kind="listing" data-id="${escapeHtml(p.id)}">${thumb ? `<img src="${escapeHtml(thumb)}" alt="" loading="lazy" decoding="async">` : `<i class="sl-noimg"></i>`}<span class="sl-t"><b>${p.p ? formatEuro(p.p) : "—"}${p.op === "rent" ? "<small>/mo</small>" : ""}</b><small>${escapeHtml([p.sz ? `${formatNumber(p.sz)} m²` : "", r.areaName || p.n || ""].filter(Boolean).join(" · "))}</small></span>${Number.isFinite(pct) ? `<em>${Math.round(pct)}</em>` : ""}</button>${ticked ? `<button type="button" class="sl-x" data-untick="${escapeHtml(p.id)}" aria-label="Remove">×</button>` : ""}</li>`;
   };
-  box.innerHTML = `<div class="sl-head"><span class="sl-title">Your shortlist</span><span class="sl-count">${ticked ? `${ticked} ticked` : "Top 5 in view"}</span></div>
-    ${rows.length ? `<ol class="sl-list">${rows.map(item).join("")}</ol>` : `<p class="sl-empty">No places in view</p>`}
-    <div class="sl-actions"><button type="button" class="pdf-btn2 pdf-btn2--block" data-pdf-export><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>Download PDF</span><b class="pdf-n${ticked ? " is-on" : ""}">${ticked || Math.min(5, rows.length)}</b></button><button type="button" class="sl-choose${state.choosing ? " is-on" : ""}" data-choose aria-pressed="${!!state.choosing}">${state.choosing ? "Done" : "Choose"}</button></div>
+  box.innerHTML = `<div class="sl-head"><span class="sl-title">Your shortlist</span>${ticked ? `<span class="sl-count">${ticked}</span>` : ""}</div>
+    ${rows.length ? `<ol class="sl-list">${rows.map(item).join("")}</ol>` : `<p class="sl-empty">Nothing added yet</p>`}
+    <div class="sl-actions"><button type="button" class="pdf-btn2 pdf-btn2--block" data-pdf-export${ticked ? "" : " disabled"}><svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M12 4v11M7 10l5 5 5-5M5 20h14"/></svg><span>PDF</span><b class="pdf-n${ticked ? " is-on" : ""}">${ticked}</b></button><button type="button" class="sl-choose${state.choosing ? " is-on" : ""}" data-choose aria-pressed="${!!state.choosing}">${state.choosing ? "Done" : "Choose"}</button></div>
     ${state.choosing ? `<p class="sl-hint">Tick places in the list or tap pins on the map</p>` : ""}`;
 }
 document.addEventListener("click", (event) => {
@@ -4205,8 +4204,7 @@ function shortlistRows() {
     }
     return rows.sort((a, b) => b.rank.pct - a.rank.pct);
   }
-  const coords = new Map(state.listings.map((f) => [f.properties.id, f.geometry.coordinates]));
-  return buildOverallRanking().slice(0, 5).map((r) => ({ ...r, coords: coords.get(r.id) }));
+  return [];
 }
 
 async function shortlistMapImage(rows) {
@@ -4383,7 +4381,7 @@ function pdfCompareHtml(rows, ctx) {
 
 async function exportShortlist({ print = true } = {}) {
   const rows = shortlistRows();
-  if (!rows.length) { alert("No places to export — zoom to an area with listings first."); return null; }
+  if (!rows.length) { setChoosing(true); return null; }
   const btn = document.querySelector("[data-pdf-export]");
   if (btn) btn.textContent = "Preparing PDF…";
   await Promise.all(rows.map((r) => ensureListingDetail(r.props)));

@@ -77,19 +77,19 @@
     "barcelona": 0
   },
   "idealistaListings": {
-    "total": 3112,
+    "total": 3200,
     "counts": {
-      "madrid_rent": 667,
+      "madrid_rent": 656,
       "zaragoza_rent": 100,
       "valència_sale": 150,
       "zaragoza_sale": 100,
       "madrid_sale": 656,
       "sevilla_sale": 100,
       "sevilla_rent": 100,
-      "málaga_sale": 100,
-      "barcelona_rent": 446,
+      "málaga_sale": 150,
+      "barcelona_rent": 445,
       "barcelona_sale": 443,
-      "málaga_rent": 100,
+      "málaga_rent": 150,
       "valència_rent": 150
     },
     "operation": [

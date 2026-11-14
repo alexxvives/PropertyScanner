@@ -3168,8 +3168,14 @@ function applySelectedAreaFilter() {
 function mapLayerBeforeLabels() {
   const layers = map.getStyle()?.layers;
   if (!layers) return undefined;
-  for (const layer of layers) {
-    if (layer.type === "symbol") return layer.id;
+  // OpenFreeMap Dark places `water_name` (a symbol) *before* the building fill, so
+  // "first symbol layer" would tuck our markers under buildings and clip the dots.
+  // Insert choropleth fills after every basemap fill/line (incl. buildings), below
+  // the remaining typography. Marker layers are added with no `before` id, on top.
+  let lastPaint = -1;
+  layers.forEach((layer, index) => { if (layer.type !== "symbol") lastPaint = index; });
+  for (let index = lastPaint + 1; index < layers.length; index += 1) {
+    if (layers[index].type === "symbol") return layers[index].id;
   }
   return undefined;
 }
@@ -3319,7 +3325,7 @@ function ensureMapLayers() {
       "circle-stroke-width": 2.5,
       "circle-opacity": 0.95,
     },
-  }, before);
+  });
   safeAddLayer({
     id: MAP_LAYERS.clusterCount,
     type: "symbol",
@@ -3333,7 +3339,7 @@ function ensureMapLayers() {
       "text-allow-overlap": true,
     },
     paint: { "text-color": "#fffdf8", "text-halo-color": "rgba(29,25,21,0.35)", "text-halo-width": 0.8 },
-  }, before);
+  });
   safeAddLayer({
     id: MAP_LAYERS.listings,
     type: "circle",
@@ -3347,7 +3353,7 @@ function ensureMapLayers() {
       "circle-stroke-width": 2.2,
       "circle-opacity": 0.95,
     },
-  }, before);
+  });
   safeAddLayer({
     id: MAP_LAYERS.listingFocusHalo,
     type: "circle",
@@ -3355,7 +3361,7 @@ function ensureMapLayers() {
     minzoom: 8,
     filter: ["==", ["get", "id"], "__none__"],
     paint: { "circle-radius": ["interpolate", ["linear"], ["zoom"], 11, 17, 14, 19, 16, 22], "circle-color": "rgba(17,17,17,0.22)", "circle-blur": 0.5 },
-  }, before);
+  });
   safeAddLayer({
     id: MAP_LAYERS.listingFocus,
     type: "circle",
@@ -3368,7 +3374,7 @@ function ensureMapLayers() {
       "circle-stroke-color": "#fff",
       "circle-stroke-width": 3.5,
     },
-  }, before);
+  });
   applyListingFocus();
   safeAddLayer({
     id: MAP_LAYERS.places,
@@ -3420,7 +3426,7 @@ function ensureMapLayers() {
       "circle-stroke-width": ["match", ["get", "pinKind"], "empty", 2.5, "closed", 2.5, 1.6],
       "circle-opacity": 1,
     },
-  }, before);
+  });
   applySelectedAreaFilter();
   retuneDarkBasemap();
   applyOverlayTheme();

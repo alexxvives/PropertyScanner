@@ -271,7 +271,7 @@ const state = {
   maxPrice: 0,
   sizeRange: "any",
   ticked: new Set(),
-  mapStyle: "light",
+  mapStyle: "dark",
   filters: { competition: true, complements: true, daytime: true, vacancies: true },
   selectedId: null,
   activeListingId: null,
@@ -285,6 +285,7 @@ const mapStyleToolbar = document.querySelector("#map-style-toolbar");
 const mapHeatmapToolbar = document.querySelector("#map-heatmap-toolbar");
 
 const MAP_STYLES = {
+  dark: { label: "Dark", url: "https://tiles.openfreemap.org/styles/dark", swatch: "#2a2a2c" },
   light: { label: "Light", url: "https://tiles.openfreemap.org/styles/positron", swatch: "#ebe6dc" },
   streets: { label: "Streets", url: "https://tiles.openfreemap.org/styles/bright", swatch: "#d4e2ed" },
   satellite: {
@@ -771,13 +772,59 @@ function colorStops(field) {
   return stops;
 }
 
+function isDarkBasemap() {
+  return state.mapStyle === "dark" || state.mapStyle === "satellite";
+}
+
 function paintAreaFillOpacity() {
   if (!map?.getLayer?.(MAP_LAYERS.areasFill)) return;
-  const dark = state.mapStyle === "satellite";
-  const opacity = dark
+  const style = state.mapStyle;
+  const opacity = style === "satellite"
     ? ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.42, 12, 0.38, 13, 0.26, 14, 0.14, 16, 0.08]
-    : ["interpolate", ["linear"], ["zoom"], 6, 0.2, 9, 0.78, 12, 0.74, 13, 0.42, 14, 0.18, 16, 0.08];
+    : style === "dark"
+      ? ["interpolate", ["linear"], ["zoom"], 6, 0.32, 9, 0.62, 12, 0.56, 13, 0.38, 14, 0.22, 16, 0.1]
+      : ["interpolate", ["linear"], ["zoom"], 6, 0.2, 9, 0.78, 12, 0.74, 13, 0.42, 14, 0.18, 16, 0.08];
   map.setPaintProperty(MAP_LAYERS.areasFill, "fill-opacity", opacity);
+}
+
+/** Tweak OpenFreeMap Dark toward ROIExplorer: black sea, dark-grey land, muted water labels. */
+function retuneDarkBasemap() {
+  if (!map || state.mapStyle !== "dark") return;
+  const set = (id, prop, val) => { try { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); } catch (_) {} };
+  set("background", "background-color", "rgb(34,34,36)");
+  set("water", "fill-color", "rgb(8,8,10)");
+  set("waterway", "line-color", "rgb(8,8,10)");
+  set("water_name", "text-color", "rgb(110,110,114)");
+  set("water_name", "text-halo-color", "rgb(8,8,10)");
+  set("landcover_ice_shelf", "fill-color", "rgb(34,34,36)");
+  set("landuse_residential", "fill-color", "rgb(36,36,38)");
+  set("landuse_park", "fill-color", "rgb(32,36,32)");
+  set("building", "fill-color", "rgb(44,44,46)");
+  set("building", "fill-outline-color", "rgb(60,60,64)");
+  set("highway_minor", "line-color", "#3a3a3e");
+  set("highway_major_inner", "line-color", "#404044");
+  set("highway_major_casing", "line-color", "rgba(88,88,92,0.85)");
+  set("highway_major_subtle", "line-color", "#3c3c40");
+  set("highway_path", "line-color", "#303032");
+}
+
+function applyOverlayTheme() {
+  if (!map?.getLayer?.(MAP_LAYERS.areasFill)) return;
+  const dark = isDarkBasemap();
+  const ink = dark ? "#f3eee6" : "#1d1915";
+  const paper = dark ? "#111114" : "#fffdf8";
+  const set = (id, prop, val) => { try { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); } catch (_) {} };
+  set(MAP_LAYERS.areasLine, "line-color", dark ? "rgba(243,238,230,0.45)" : "#fffdf8");
+  set(MAP_LAYERS.cities, "circle-stroke-color", dark ? "#fffdf8" : "#fffdf8");
+  set(MAP_LAYERS.citiesLabel, "text-color", ink);
+  set(MAP_LAYERS.citiesLabel, "text-halo-color", dark ? "#111114" : "#fffdf8");
+  set(MAP_LAYERS.areaSelectedFill, "fill-color", ink);
+  set(MAP_LAYERS.areaSelectedHalo, "line-color", dark ? "rgba(243,238,230,0.4)" : "#fffdf8");
+  set(MAP_LAYERS.areaSelected, "line-color", ink);
+  set(MAP_LAYERS.clusters, "circle-stroke-color", "#fffdf8");
+  set(MAP_LAYERS.listings, "circle-stroke-color", "#fffdf8");
+  set(MAP_LAYERS.listingFocusHalo, "circle-color", dark ? "rgba(255,253,248,0.28)" : "rgba(17,17,17,0.22)");
+  document.body.classList.toggle("map-dark", state.mapStyle === "dark");
 }
 
 function paintScores() {
@@ -790,14 +837,17 @@ function paintScores() {
     interpolate.push(stop, ramp[index]);
   });
   const failIds = [];
+  const blank = isDarkBasemap() ? "#2c2c2e" : "#ebe4da";
+  const fail = isDarkBasemap() ? "#2a2a2c" : "#e9e5df";
   const expression = ["case",
-    ["<", ["get", "score"], 0], "#ebe4da",
-    ["in", ["get", "id"], ["literal", failIds]], "#e9e5df",
-    ["!", ["has", mode.field]], "#ebe4da",
+    ["<", ["get", "score"], 0], blank,
+    ["in", ["get", "id"], ["literal", failIds]], fail,
+    ["!", ["has", mode.field]], blank,
     interpolate,
   ];
   map.setPaintProperty(MAP_LAYERS.areasFill, "fill-color", expression);
   paintAreaFillOpacity();
+  applyOverlayTheme();
   if (mapLegend) {
     mapLegend.innerHTML = `<span class="swatches" title="${escapeHtml(mode.label)}">${ramp.map((color) => `<i style="background:${color}"></i>`).join("")}</span><span class="legend-ends"><span>Low</span><span>High</span></span>`;
   }
@@ -3058,6 +3108,8 @@ function switchMapStyle(styleId) {
   };
   map.once("style.load", () => {
     if (generation !== mapStyleGeneration) return;
+    retuneDarkBasemap();
+    document.body.classList.toggle("map-dark", state.mapStyle === "dark");
     if (map.isStyleLoaded()) finishAttach();
     else map.once("idle", finishAttach);
   });
@@ -3336,6 +3388,8 @@ function ensureMapLayers() {
     },
   }, before);
   applySelectedAreaFilter();
+  retuneDarkBasemap();
+  applyOverlayTheme();
   mapOverlayReady = scannerOverlayComplete();
 }
 
@@ -3522,11 +3576,12 @@ function placeNearCursor(point) {
 
 const map = new maplibregl.Map({
   container: "map",
-  style: MAP_STYLES.light.url,
+  style: MAP_STYLES.dark.url,
   bounds: SPAIN_BOUNDS,
   fitBoundsOptions: { padding: mapPadding() },
   attributionControl: true,
 });
+document.body.classList.toggle("map-dark", state.mapStyle === "dark");
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
 
 let mapAppStarted = false;

@@ -782,30 +782,60 @@ function paintAreaFillOpacity() {
   const opacity = style === "satellite"
     ? ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.42, 12, 0.38, 13, 0.26, 14, 0.14, 16, 0.08]
     : style === "dark"
-      ? ["interpolate", ["linear"], ["zoom"], 6, 0.32, 9, 0.62, 12, 0.56, 13, 0.38, 14, 0.22, 16, 0.1]
+      ? ["interpolate", ["linear"], ["zoom"], 6, 0.18, 9, 0.26, 11, 0.28, 13, 0.22, 15, 0.14, 17, 0.08]
       : ["interpolate", ["linear"], ["zoom"], 6, 0.2, 9, 0.78, 12, 0.74, 13, 0.42, 14, 0.18, 16, 0.08];
   map.setPaintProperty(MAP_LAYERS.areasFill, "fill-opacity", opacity);
 }
 
-/** Tweak OpenFreeMap Dark toward ROIExplorer: black sea, dark-grey land, muted water labels. */
+/** Tweak OpenFreeMap Dark toward ROIExplorer: charcoal land, black sea, thin low-contrast grey roads. */
 function retuneDarkBasemap() {
   if (!map || state.mapStyle !== "dark") return;
   const set = (id, prop, val) => { try { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); } catch (_) {} };
-  set("background", "background-color", "rgb(34,34,36)");
-  set("water", "fill-color", "rgb(8,8,10)");
-  set("waterway", "line-color", "rgb(8,8,10)");
-  set("water_name", "text-color", "rgb(110,110,114)");
-  set("water_name", "text-halo-color", "rgb(8,8,10)");
-  set("landcover_ice_shelf", "fill-color", "rgb(34,34,36)");
-  set("landuse_residential", "fill-color", "rgb(36,36,38)");
-  set("landuse_park", "fill-color", "rgb(32,36,32)");
-  set("building", "fill-color", "rgb(44,44,46)");
-  set("building", "fill-outline-color", "rgb(60,60,64)");
-  set("highway_minor", "line-color", "#3a3a3e");
-  set("highway_major_inner", "line-color", "#404044");
-  set("highway_major_casing", "line-color", "rgba(88,88,92,0.85)");
-  set("highway_major_subtle", "line-color", "#3c3c40");
-  set("highway_path", "line-color", "#303032");
+  const LAND = "#1e1e1e";
+  const SEA = "#0b0b0c";
+  const ROAD = "#3a3a3a";
+  const ROAD_MAJOR = "#424242";
+  const thin = ["interpolate", ["linear"], ["zoom"], 5, 0.35, 8, 0.55, 11, 0.8, 14, 1.15, 17, 1.7, 20, 2.6];
+  const thinMajor = ["interpolate", ["linear"], ["zoom"], 5, 0.5, 8, 0.75, 11, 1.05, 14, 1.45, 17, 2.1, 20, 3.2];
+  const thinMotorway = ["interpolate", ["linear"], ["zoom"], 4, 0.6, 7, 0.85, 11, 1.2, 14, 1.7, 17, 2.4, 20, 3.6];
+  set("background", "background-color", LAND);
+  set("water", "fill-color", SEA);
+  set("waterway", "line-color", SEA);
+  set("water_name", "text-color", "#6e6e72");
+  set("water_name", "text-halo-color", SEA);
+  set("landcover_ice_shelf", "fill-color", LAND);
+  set("landcover_glacier", "fill-color", LAND);
+  set("landuse_residential", "fill-color", "#202020");
+  set("landuse_park", "fill-color", "#1c1e1c");
+  set("landcover_wood", "fill-color", "#1c1e1c");
+  set("building", "fill-color", "#262626");
+  set("building", "fill-outline-color", "#2e2e2e");
+  set("road_area_pier", "fill-color", LAND);
+  set("road_pier", "line-color", ROAD);
+  set("aeroway-area", "fill-color", LAND);
+  set("aeroway-runway", "line-color", ROAD);
+  set("aeroway-taxiway", "line-color", ROAD);
+  set("aeroway-runway-casing", "line-opacity", 0);
+  // Hide heavy casings; they were rendering as thick black bands.
+  set("highway_major_casing", "line-opacity", 0);
+  set("highway_motorway_casing", "line-opacity", 0);
+  const roads = {
+    highway_path: [ROAD, thin],
+    highway_minor: [ROAD, thin],
+    highway_major_subtle: [ROAD_MAJOR, thin],
+    highway_major_inner: [ROAD_MAJOR, thinMajor],
+    highway_motorway_subtle: [ROAD_MAJOR, thinMotorway],
+    highway_motorway_inner: [ROAD_MAJOR, thinMotorway],
+  };
+  for (const [id, [color, width]] of Object.entries(roads)) {
+    set(id, "line-color", color);
+    set(id, "line-width", width);
+    set(id, "line-opacity", 1);
+  }
+  for (const id of ["railway", "railway_minor", "railway_transit"]) {
+    set(id, "line-color", "#2a2a2a");
+    set(id, "line-width", 0.7);
+  }
 }
 
 function applyOverlayTheme() {
@@ -814,13 +844,17 @@ function applyOverlayTheme() {
   const ink = dark ? "#f3eee6" : "#1d1915";
   const paper = dark ? "#111114" : "#fffdf8";
   const set = (id, prop, val) => { try { if (map.getLayer(id)) map.setPaintProperty(id, prop, val); } catch (_) {} };
-  set(MAP_LAYERS.areasLine, "line-color", dark ? "rgba(243,238,230,0.45)" : "#fffdf8");
+  set(MAP_LAYERS.areasLine, "line-color", dark ? "rgba(255,255,255,0.16)" : "#fffdf8");
+  set(MAP_LAYERS.areasLine, "line-width", dark ? 0.7 : 1);
+  set(MAP_LAYERS.areasLine, "line-opacity", dark
+    ? ["interpolate", ["linear"], ["zoom"], 9, 0.35, 12, 0.28, 15, 0.12]
+    : ["interpolate", ["linear"], ["zoom"], 11, 0.95, 13.5, 0.28, 15, 0.08]);
   set(MAP_LAYERS.cities, "circle-stroke-color", dark ? "#fffdf8" : "#fffdf8");
   set(MAP_LAYERS.citiesLabel, "text-color", ink);
   set(MAP_LAYERS.citiesLabel, "text-halo-color", dark ? "#111114" : "#fffdf8");
   set(MAP_LAYERS.areaSelectedFill, "fill-color", ink);
-  set(MAP_LAYERS.areaSelectedHalo, "line-color", dark ? "rgba(243,238,230,0.4)" : "#fffdf8");
-  set(MAP_LAYERS.areaSelected, "line-color", ink);
+  set(MAP_LAYERS.areaSelectedHalo, "line-color", dark ? "rgba(255,255,255,0.18)" : "#fffdf8");
+  set(MAP_LAYERS.areaSelected, "line-color", dark ? "rgba(243,238,230,0.7)" : ink);
   set(MAP_LAYERS.clusters, "circle-stroke-color", "#fffdf8");
   set(MAP_LAYERS.listings, "circle-stroke-color", "#fffdf8");
   set(MAP_LAYERS.listingFocusHalo, "circle-color", dark ? "rgba(255,253,248,0.28)" : "rgba(17,17,17,0.22)");
@@ -837,8 +871,8 @@ function paintScores() {
     interpolate.push(stop, ramp[index]);
   });
   const failIds = [];
-  const blank = isDarkBasemap() ? "#2c2c2e" : "#ebe4da";
-  const fail = isDarkBasemap() ? "#2a2a2c" : "#e9e5df";
+  const blank = isDarkBasemap() ? "#1e1e1e" : "#ebe4da";
+  const fail = isDarkBasemap() ? "#1e1e1e" : "#e9e5df";
   const expression = ["case",
     ["<", ["get", "score"], 0], blank,
     ["in", ["get", "id"], ["literal", failIds]], fail,

@@ -3112,7 +3112,7 @@ body.choosing .has-tick .tick { display: flex !important; }
 .score-bar__caption--split .upd { display: inline; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: inherit; color: inherit; letter-spacing: normal; }
 
 /* Round 39: Dark basemap (OpenFreeMap Dark / CARTO Dark Matter), default */
-#map { background: #222224; }
+#map { background: #1e1e1e; }
 body.map-dark .maplibregl-ctrl-attrib { background: rgba(20,20,22,.72); color: #c8c8cc; }
 body.map-dark .maplibregl-ctrl-attrib a { color: #e8e8ec; }
 @media (min-width: 1025px) {

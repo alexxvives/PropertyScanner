@@ -194,8 +194,9 @@ const JUMPS = {
   malaga: [[-4.54, 36.684], [-4.405, 36.74]],
   spain: SPAIN_BOUNDS,
 };
-/** Default view: central Madrid, where most leads are. */
-const DEFAULT_VIEW = JUMPS.madrid;
+/** Default view: globe centred on Spain, wide enough that the curvature is visible. */
+const SPAIN_GLOBE_BOUNDS = [[-13, 32], [8, 48]];
+const DEFAULT_VIEW = SPAIN_GLOBE_BOUNDS;
 
 /** Prefixed ids so OpenFreeMap basemap layers never collide (e.g. some styles ship an `areas-fill`). */
 const MAP_LAYERS = {
@@ -3055,6 +3056,32 @@ function mapPadding() {
   return { left: document.body.classList.contains("left-closed") ? 60 : 390, right: document.body.classList.contains("right-closed") ? 60 : 500, top: 30, bottom: 30 };
 }
 
+function applyGlobePresentation() {
+  if (!map?.setProjection) return;
+  try { map.setProjection({ type: "globe" }); } catch (_) {}
+  try {
+    map.setSky({
+      "atmosphere-blend": ["interpolate", ["linear"], ["zoom"], 0, 0.4, 4, 0.22, 6, 0.05, 7, 0],
+      "sky-color": "#000000",
+      "horizon-color": "#141416",
+      "fog-color": "#000000",
+      "sky-horizon-blend": 0.35,
+      "horizon-fog-blend": 0.85,
+      "fog-ground-blend": 0.45,
+    });
+  } catch (_) {}
+}
+
+function showSpainGlobe({ duration = 900 } = {}) {
+  if (!map) return;
+  map.fitBounds(SPAIN_GLOBE_BOUNDS, {
+    padding: jumpPadding(),
+    duration,
+    pitch: 0,
+    bearing: 0,
+  });
+}
+
 function mountMapToolbar() {
   if (!mapStyleToolbar || !mapHeatmapToolbar) return;
   mapStyleToolbar.innerHTML = Object.entries(MAP_STYLES)
@@ -3142,6 +3169,7 @@ function switchMapStyle(styleId) {
   };
   map.once("style.load", () => {
     if (generation !== mapStyleGeneration) return;
+    applyGlobePresentation();
     retuneDarkBasemap();
     document.body.classList.toggle("map-dark", state.mapStyle === "dark");
     if (map.isStyleLoaded()) finishAttach();
@@ -3522,7 +3550,7 @@ function applyView(fly) {
   if (!fly) return;
   const padding = mapPadding();
   if (state.city === "all") {
-    map.fitBounds(SPAIN_BOUNDS, { padding, duration: 700 });
+    showSpainGlobe({ duration: 900 });
     return;
   }
   const areas = visibleAreas();
@@ -3617,12 +3645,14 @@ function placeNearCursor(point) {
 const map = new maplibregl.Map({
   container: "map",
   style: MAP_STYLES.dark.url,
-  bounds: SPAIN_BOUNDS,
-  fitBoundsOptions: { padding: mapPadding() },
+  center: [-3.7, 39.8],
+  zoom: 3.7,
+  minZoom: 1,
   attributionControl: true,
 });
 document.body.classList.toggle("map-dark", state.mapStyle === "dark");
 map.addControl(new maplibregl.NavigationControl({ showCompass: false }), "bottom-right");
+map.on("style.load", () => { applyGlobePresentation(); });
 
 let mapAppStarted = false;
 
@@ -3632,7 +3662,7 @@ async function onMapReady() {
   ensureMapLayers();
   mountMapToolbar();
   paintScores();
-  map.fitBounds(DEFAULT_VIEW, { padding: mapPadding(), duration: 0 });
+  showSpainGlobe({ duration: 0 });
   await bootstrapAppData();
 }
 
@@ -3811,7 +3841,7 @@ map.on("click", (event) => {
   const cityHit = queryMapLayerFeatures(event.point, [MAP_LAYERS.cities])[0];
   if (cityHit) {
     const jump = JUMPS[String(cityHit.properties.city || "").toLowerCase()];
-    if (jump) map.fitBounds(jump, { padding: jumpPadding(), duration: 700 });
+    if (jump) map.fitBounds(jump, { padding: jumpPadding(), duration: 900 });
     return;
   }
   const cluster = queryMapLayerFeatures(event.point, [MAP_LAYERS.clusters])[0];
@@ -3853,8 +3883,12 @@ map.on("moveend", () => {
 document.querySelector("#jump-row")?.addEventListener("click", (event) => {
   const button = event.target.closest("[data-jump]");
   if (!button) return;
+  if (button.dataset.jump === "spain") {
+    showSpainGlobe({ duration: 900 });
+    return;
+  }
   const target = JUMPS[button.dataset.jump];
-  if (target) map.fitBounds(target, { padding: jumpPadding(), duration: 700 });
+  if (target) map.fitBounds(target, { padding: jumpPadding(), duration: 900 });
 });
 
 map.on("error", (event) => {

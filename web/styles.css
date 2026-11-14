@@ -3112,7 +3112,7 @@ body.choosing .has-tick .tick { display: flex !important; }
 .score-bar__caption--split .upd { display: inline; flex: 0 1 auto; min-width: 0; margin: 0; overflow: hidden; text-overflow: ellipsis; font-size: inherit; font-weight: inherit; color: inherit; letter-spacing: normal; }
 
 /* Round 39: Dark basemap (OpenFreeMap Dark / CARTO Dark Matter), default */
-#map { background: #1e1e1e; }
+#map { background: #050506; }
 body.map-dark .maplibregl-ctrl-attrib { background: rgba(20,20,22,.72); color: #c8c8cc; }
 body.map-dark .maplibregl-ctrl-attrib a { color: #e8e8ec; }
 @media (min-width: 1025px) {
@@ -3124,3 +3124,7 @@ body.map-dark .maplibregl-ctrl-attrib a { color: #e8e8ec; }
   .map-toolbar--styles .map-toolbar__group--stack { display: grid !important; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 3px; }
   .map-toolbar--styles .map-style-btn { width: auto !important; justify-content: center; padding: 5px 4px !important; font-size: 11.5px; min-width: 0; }
 }
+
+/* Round 40: dark space behind the globe */
+#map { background: #050506; }
+body.map-dark #map, body:not(.map-dark) #map { background: #050506; }
